@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Toaster, toast } from "sonner";
+import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import { BALANCE } from "@/game-data/balance";
 import { ACHIEVEMENTS } from "@/game-data/achievements";
 import { AUTOMATION_NODES } from "@/game-data/automation";
@@ -17,6 +18,8 @@ import { computeProduction } from "@/utilities/production";
 import { formatCompact, formatNumber } from "@/utilities/format";
 import { getAutomationCost, getEvolveCost, getPlanetCost, getPrestigeEssenceGain, getPrestigeUpgradeCost, getResearchCost, getSpecializationCost, getUpgradeCost } from "@/utilities/costs";
 import type { GameStateData, Planet, TabId } from "@/types/game";
+import stationBg from "@/imports/download__78_.jpg";
+import spaceFieldBg from "@/imports/OwO.jpg";
 
 type Screen = "start" | "game";
 
@@ -113,8 +116,29 @@ function StartScreen({
 }) {
   return (
     <div style={styles.startRoot}>
+      <ImageWithFallback
+        src={stationBg}
+        alt="Futuristic space observation room with a large window looking out at a planet"
+        className="absolute inset-0 w-full h-full object-cover"
+        style={{
+          filter: "saturate(0.95) brightness(0.62) contrast(1.03)",
+          transform: "scale(1.04)",
+          transformOrigin: "center center",
+          objectPosition: "center center",
+        }}
+      />
       <div style={styles.startBackdrop} />
       <div style={styles.startGlow} />
+      <div style={styles.startStatusLeft}>OBSERVATION SYSTEM ONLINE</div>
+      <div style={styles.startStatusRight}>
+        <div style={styles.statusTitle}>SYSTEM STATUS</div>
+        <div style={styles.statusGrid}>
+          <span>LAST SAVE</span><span>{preview ? formatDuration(preview.lastSaveTime ? Date.now() - preview.lastSaveTime : 0) : "—"}</span>
+          <span>SYSTEM NAME</span><span>Sol Prime</span>
+          <span>PLAYTIME</span><span>{preview ? formatDuration(preview.stats.playTimeMs) : "00:00:00"}</span>
+          <span>EVOLUTION</span><span>{preview ? `${Math.min(100, Math.round((preview.rebirthCount / 3) * 100))}%` : "0%"}</span>
+        </div>
+      </div>
       <div style={styles.startPanel}>
         <div style={styles.kicker}>Observation system online</div>
         <h1 style={styles.title}>Stellar Genesis</h1>
@@ -544,6 +568,18 @@ function SolarSystem({
   const starClass = getStarClass(state.starClassId);
   return (
     <div style={styles.systemStage}>
+      <ImageWithFallback
+        src={spaceFieldBg}
+        alt="Deep space star field"
+        className="absolute inset-0 w-full h-full object-cover"
+        style={{
+          filter: "saturate(0.9) brightness(0.82) contrast(1.02)",
+          opacity: 0.8,
+          transform: "scale(1.08)",
+          transformOrigin: "center center",
+          objectPosition: "center center",
+        }}
+      />
       <div style={styles.systemBackdrop} />
       <div style={styles.starAnchor}>
         <button style={styles.starButton} onClick={onClickStar} aria-label="Click the star to generate energy">
@@ -658,16 +694,14 @@ const styles: Record<string, CSSProperties> = {
     placeItems: "center",
     position: "relative",
     overflow: "hidden",
-    background: "radial-gradient(circle at 50% 30%, #182d55 0%, #091325 40%, #04070d 100%)",
+    background: "radial-gradient(circle at 50% 30%, rgba(24,45,85,0.15) 0%, rgba(9,19,37,0.68) 40%, rgba(4,7,13,0.92) 100%)",
     color: "#f6f2e8",
     fontFamily: "Inter, sans-serif",
   },
   startBackdrop: {
     position: "absolute",
     inset: 0,
-    backgroundImage: "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.5) 0 1px, transparent 1.5px), radial-gradient(circle at 80% 30%, rgba(255,255,255,0.4) 0 1px, transparent 1.5px), radial-gradient(circle at 40% 80%, rgba(255,255,255,0.3) 0 1px, transparent 1.5px)",
-    backgroundSize: "280px 280px",
-    opacity: 0.45,
+    background: "linear-gradient(160deg, rgba(7,19,38,0.55) 0%, rgba(19,39,71,0.45) 50%, rgba(7,19,38,0.7) 100%)",
   },
   startGlow: {
     position: "absolute",
@@ -683,34 +717,34 @@ const styles: Record<string, CSSProperties> = {
     width: "min(720px, calc(100vw - 32px))",
     padding: 32,
     borderRadius: 24,
-    border: "1px solid rgba(169,199,223,0.15)",
-    background: "rgba(8,16,31,0.68)",
-    backdropFilter: "blur(18px)",
-    boxShadow: "0 30px 120px rgba(0,0,0,0.35)",
+    border: "1px solid rgba(169,199,223,0.12)",
+    background: "rgba(8,16,31,0.18)",
+    backdropFilter: "blur(2px)",
+    boxShadow: "none",
   },
-  kicker: { letterSpacing: "0.28em", fontSize: 11, color: "#9eacc1", textTransform: "uppercase" },
-  title: { margin: "14px 0 10px", fontSize: "clamp(3rem, 7vw, 5rem)", lineHeight: 0.95, letterSpacing: "0.08em" },
-  subtitle: { maxWidth: 560, color: "#d4deee", lineHeight: 1.7, marginBottom: 28 },
+  kicker: { letterSpacing: "0.28em", fontSize: 11, color: "#9eacc1", textTransform: "uppercase", fontFamily: "JetBrains Mono, monospace" },
+  title: { margin: "14px 0 10px", fontSize: "clamp(3rem, 7vw, 5rem)", lineHeight: 0.95, letterSpacing: "0.08em", fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, textShadow: "0 2px 40px rgba(242,138,91,0.3), 0 0 80px rgba(115,106,174,0.25)" },
+  subtitle: { maxWidth: 560, color: "#d4deee", lineHeight: 1.7, marginBottom: 28, fontFamily: "Inter, sans-serif", fontWeight: 300 },
   startButtons: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 24 },
-  primaryButton: { border: "1px solid #f28a5b", background: "linear-gradient(180deg, rgba(242,138,91,0.25), rgba(242,138,91,0.14))", color: "#fff1c7", padding: "12px 18px", borderRadius: 14, cursor: "pointer", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" },
-  secondaryButton: { border: "1px solid rgba(169,199,223,0.2)", background: "rgba(18,39,71,0.5)", color: "#d4deee", padding: "12px 18px", borderRadius: 14, cursor: "pointer" },
+  primaryButton: { border: "1px solid #f28a5b", background: "rgba(242,138,91,0.12)", color: "#f28a5b", padding: "12px 18px", borderRadius: 4, cursor: "pointer", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "Space Grotesk, sans-serif" },
+  secondaryButton: { border: "1px solid rgba(169,199,223,0.2)", background: "transparent", color: "#9eacc1", padding: "12px 18px", borderRadius: 4, cursor: "pointer", fontFamily: "Inter, sans-serif" },
   dangerButton: { border: "1px solid rgba(255,116,116,0.28)", background: "rgba(110,34,34,0.35)", color: "#ffd7d7", padding: "12px 18px", borderRadius: 14, cursor: "pointer" },
   previewGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 },
   previewStat: { padding: 14, borderRadius: 16, background: "rgba(12,28,54,0.66)", border: "1px solid rgba(169,199,223,0.1)" },
   previewLabel: { fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "#9eacc1", marginBottom: 6 },
   previewValue: { fontSize: 16, color: "#f6f2e8" },
   gameRoot: { minHeight: "100vh", display: "flex", flexDirection: "column", background: "#071326", color: "#f6f2e8", fontFamily: "Inter, sans-serif" },
-  topBar: { display: "flex", gap: 18, alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid rgba(169,199,223,0.1)", background: "rgba(7,19,38,0.82)", backdropFilter: "blur(12px)" },
+  topBar: { display: "flex", gap: 18, alignItems: "center", justifyContent: "space-between", padding: "10px 24px", borderBottom: "1px solid rgba(169,199,223,0.1)", background: "rgba(7,19,38,0.82)", backdropFilter: "blur(12px)", fontFamily: "JetBrains Mono, monospace" },
   topBarTitle: { fontSize: 18, fontWeight: 700, marginTop: 4 },
   resourceStrip: { display: "flex", gap: 14, flexWrap: "wrap", color: "#d4deee", fontSize: 13 },
   actionRow: { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" },
-  mainGrid: { display: "grid", gridTemplateColumns: "120px minmax(0, 1fr) 360px", minHeight: 0, flex: 1 },
-  navRail: { display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRight: "1px solid rgba(169,199,223,0.08)", background: "rgba(7,19,38,0.58)" },
-  navButton: { border: "1px solid transparent", background: "transparent", color: "#9eacc1", padding: "10px 12px", borderRadius: 14, cursor: "pointer", textAlign: "left" },
-  navActive: { border: "1px solid rgba(242,138,91,0.35)", background: "rgba(242,138,91,0.12)", color: "#fff1c7", padding: "10px 12px", borderRadius: 14, cursor: "pointer", textAlign: "left" },
+  mainGrid: { display: "grid", gridTemplateColumns: "56px minmax(0, 1fr) 280px", minHeight: 0, flex: 1 },
+  navRail: { display: "flex", flexDirection: "column", gap: 4, paddingTop: 16, alignItems: "center", borderRight: "1px solid rgba(169,199,223,0.08)", background: "rgba(7,19,38,0.58)" },
+  navButton: { border: "1px solid transparent", background: "transparent", color: "#59677d", padding: "8px 4px", borderRadius: 4, cursor: "pointer", textAlign: "center", width: 40, fontSize: 10, fontFamily: "JetBrains Mono, monospace", opacity: 0.35 },
+  navActive: { border: "1px solid rgba(242,138,91,0.35)", background: "rgba(242,138,91,0.12)", color: "#f28a5b", padding: "8px 4px", borderRadius: 4, cursor: "pointer", textAlign: "center", width: 40, fontSize: 10, fontFamily: "JetBrains Mono, monospace", boxShadow: "0 0 10px rgba(242,138,91,0.25)" },
   centerPanel: { position: "relative", minHeight: 0, overflow: "hidden" },
   sidePanel: { display: "flex", flexDirection: "column", minHeight: 0, borderLeft: "1px solid rgba(169,199,223,0.08)", background: "rgba(7,19,38,0.74)" },
-  sideHeader: { padding: 16, borderBottom: "1px solid rgba(169,199,223,0.08)", letterSpacing: "0.16em", textTransform: "uppercase", color: "#f28a5b", fontSize: 11 },
+  sideHeader: { padding: 16, borderBottom: "1px solid rgba(169,199,223,0.08)", letterSpacing: "0.16em", textTransform: "uppercase", color: "#f28a5b", fontSize: 11, fontFamily: "Space Grotesk, sans-serif" },
   panelScroll: { padding: 14, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", minHeight: 0 },
   actionCard: { textAlign: "left", padding: 14, borderRadius: 18, border: "1px solid rgba(242,138,91,0.22)", background: "rgba(18,39,71,0.56)", color: "#f6f2e8", cursor: "pointer" },
   actionCardDisabled: { textAlign: "left", padding: 14, borderRadius: 18, border: "1px solid rgba(169,199,223,0.1)", background: "rgba(12,28,54,0.4)", color: "#9eacc1", opacity: 0.55, cursor: "not-allowed" },
@@ -732,14 +766,14 @@ const styles: Record<string, CSSProperties> = {
   settingsGrid: { display: "grid", gap: 10, marginBottom: 14 },
   settingRow: { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", border: "1px solid rgba(169,199,223,0.1)", background: "rgba(12,28,54,0.4)", borderRadius: 14, padding: 12 },
   textArea: { width: "100%", borderRadius: 16, border: "1px solid rgba(169,199,223,0.15)", background: "rgba(7,19,38,0.5)", color: "#f6f2e8", padding: 12, fontFamily: "JetBrains Mono, monospace", marginBottom: 12 },
-  systemStage: { position: "relative", height: "100%", minHeight: 0, background: "radial-gradient(circle at center, rgba(18,39,71,0.7) 0%, rgba(7,19,38,0.95) 55%, rgba(2,5,12,1) 100%)", overflow: "hidden" },
-  systemBackdrop: { position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 20% 30%, rgba(255,255,255,0.55) 0 1px, transparent 1.5px), radial-gradient(circle at 70% 18%, rgba(255,255,255,0.35) 0 1px, transparent 1.5px), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.3) 0 1px, transparent 1.5px)", backgroundSize: "220px 220px", opacity: 0.55 },
+  systemStage: { position: "relative", height: "100%", minHeight: 0, background: "radial-gradient(circle at center, rgba(18,39,71,0.35) 0%, rgba(7,19,38,0.92) 55%, rgba(2,5,12,1) 100%)", overflow: "hidden" },
+  systemBackdrop: { position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 20% 30%, rgba(255,255,255,0.45) 0 1px, transparent 1.5px), radial-gradient(circle at 70% 18%, rgba(255,255,255,0.28) 0 1px, transparent 1.5px), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.25) 0 1px, transparent 1.5px)", backgroundSize: "220px 220px", opacity: 0.55 },
   starAnchor: { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 2 },
-  starButton: { width: 180, height: 180, borderRadius: "50%", border: "none", background: "radial-gradient(circle, rgba(255,244,203,1) 0%, rgba(242,138,91,0.95) 36%, rgba(115,106,174,0.6) 70%, rgba(7,19,38,0.15) 100%)", color: "#fff", display: "grid", placeItems: "center", cursor: "pointer", boxShadow: "0 0 60px rgba(242,138,91,0.45)" },
+  starButton: { width: 180, height: 180, borderRadius: "50%", border: "none", background: "transparent", color: "#fff", display: "grid", placeItems: "center", cursor: "pointer", boxShadow: "none" },
   starCore: { width: 86, height: 86, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,241,199,1) 35%, rgba(242,138,91,0.9) 60%, transparent 85%)", boxShadow: "0 0 28px rgba(255,241,199,0.8)" },
   starLabel: { marginTop: 8, fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase" },
   starMeta: { fontSize: 12, color: "#d4deee", marginTop: 4 },
-  planetDot: { position: "absolute", width: 86, height: 86, borderRadius: "50%", border: "none", display: "grid", placeItems: "center", cursor: "pointer", transform: "translate(-50%, -50%)", color: "#f6f2e8" },
+  planetDot: { position: "absolute", width: 86, height: 86, borderRadius: "50%", border: "none", display: "grid", placeItems: "center", cursor: "pointer", transform: "translate(-50%, -50%)", color: "#f6f2e8", background: "transparent" },
   planetName: { fontSize: 10, fontWeight: 700, textShadow: "0 1px 2px rgba(0,0,0,0.5)" },
   planetSub: { fontSize: 9, color: "rgba(255,255,255,0.86)", textShadow: "0 1px 2px rgba(0,0,0,0.5)" },
   systemHud: { position: "absolute", left: 18, bottom: 18, zIndex: 2, padding: "10px 12px", borderRadius: 16, background: "rgba(7,19,38,0.7)", border: "1px solid rgba(169,199,223,0.12)", color: "#d4deee", fontSize: 12, lineHeight: 1.6 },
