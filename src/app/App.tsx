@@ -510,6 +510,16 @@ function PanelContents({
   onOpenPrestigeConfirm: () => void;
 }) {
   const activeTab = state.activeTab;
+  const [upgradeCategory, setUpgradeCategory] = useState<"all" | "stellar" | "planetary" | "biological" | "civilization" | "infrastructure">("all");
+  const upgradeCategories = [
+    { id: "all", label: "All" },
+    { id: "stellar", label: "Stellar" },
+    { id: "planetary", label: "Planetary" },
+    { id: "biological", label: "Life & Civilization" },
+    { id: "civilization", label: "Research & Tech" },
+    { id: "infrastructure", label: "Space Infra" },
+  ] as const;
+  const filteredUpgrades = upgradeCategory === "all" ? UPGRADES : UPGRADES.filter((upgrade) => upgrade.category.toLowerCase() === upgradeCategory);
   return (
     <PanelScroll>
       {activeTab === "system" ? (
@@ -517,23 +527,34 @@ function PanelContents({
           <div style={styles.sectionCopy}>
             {selectedPlanet ? `Selected planet: ${selectedPlanet.name}` : `Selected star: ${getStarClass(state.starClassId).name}`}
           </div>
+          <div style={styles.subnavRow}>
+            {upgradeCategories.map((category) => (
+              <button
+                key={category.id}
+                style={upgradeCategory === category.id ? styles.subnavButtonActive : styles.subnavButton}
+                onClick={() => setUpgradeCategory(category.id)}
+              >
+                {category.label}
+              </button>
+            ))}
+          </div>
           {selectedPlanet ? (
             <PlanetDetailCard planet={selectedPlanet} state={state} onEvolve={onEvolvePlanet} onSpecialize={onSpecializePlanet} />
           ) : (
             <div style={styles.sectionCopy}>The star is the core of the system. Click it for energy and use upgrades to increase its output.</div>
           )}
-          {UPGRADES.map((upgrade) => {
+          {filteredUpgrades.map((upgrade) => {
             const owned = state.upgrades[upgrade.id] ?? 0;
             const cost = getUpgradeCost(upgrade.id, owned);
             const unlocked = state.totalEarned >= (upgrade.unlockTotalEarned ?? 0);
-            return unlocked ? <ActionCard key={upgrade.id} title={upgrade.name} desc={upgrade.description} meta={upgrade.category} enabled={state.energy >= cost} onClick={() => onBuyUpgrade(upgrade.id)} right={`${formatCompact(cost)} energy`} /> : null;
+            return unlocked ? <ActionCard key={upgrade.id} title={upgrade.name} desc={upgrade.description} meta={upgrade.category} enabled={state.energy >= cost} onClick={() => onBuyUpgrade(upgrade.id)} right={`${owned ? `Lv.${owned}` : "New"} · ${formatCompact(cost)} energy`} /> : null;
           })}
         </>
       ) : null}
 
       {activeTab === "planets" ? (
         <>
-          <ActionCard title="Create planet" desc={`Choose a world type. Cost ${formatCompact(getPlanetCost(state.planets.length))} energy.`} meta={`${state.planets.length}/${BALANCE.maxPlanets} planets`} enabled={state.energy >= getPlanetCost(state.planets.length) && state.planets.length < BALANCE.maxPlanets} onClick={onOpenPlanetPicker} />
+          <ActionCard title="Create planet" desc={`Unlock the next orbital slot and choose a world type. Cost ${formatCompact(getPlanetCost(state.planets.length))} energy.`} meta={`${state.planets.length}/${BALANCE.maxPlanets} planets`} enabled={state.energy >= getPlanetCost(state.planets.length) && state.planets.length < BALANCE.maxPlanets} onClick={onOpenPlanetPicker} />
           {state.planets.map((planet) => (
             <PlanetListCard
               key={planet.id}
@@ -549,12 +570,23 @@ function PanelContents({
 
       {activeTab === "upgrades" ? (
         <>
-          <div style={styles.sectionCopy}>Upgrade categories improve click power, passive energy, and planetary growth.</div>
-          {UPGRADES.map((upgrade) => {
+          <div style={styles.sectionCopy}>Upgrade categories improve click power, passive energy, planetary growth, and long-term expansion.</div>
+          <div style={styles.subnavRow}>
+            {upgradeCategories.map((category) => (
+              <button
+                key={category.id}
+                style={upgradeCategory === category.id ? styles.subnavButtonActive : styles.subnavButton}
+                onClick={() => setUpgradeCategory(category.id)}
+              >
+                {category.label}
+              </button>
+            ))}
+          </div>
+          {filteredUpgrades.map((upgrade) => {
             const owned = state.upgrades[upgrade.id] ?? 0;
             const cost = getUpgradeCost(upgrade.id, owned);
             const unlocked = state.totalEarned >= (upgrade.unlockTotalEarned ?? 0);
-            return unlocked ? <ActionCard key={upgrade.id} title={upgrade.name} desc={upgrade.description} meta={upgrade.category} enabled={state.energy >= cost} onClick={() => onBuyUpgrade(upgrade.id)} right={`${formatCompact(cost)} energy`} /> : null;
+            return unlocked ? <ActionCard key={upgrade.id} title={upgrade.name} desc={upgrade.description} meta={upgrade.category} enabled={state.energy >= cost} onClick={() => onBuyUpgrade(upgrade.id)} right={`${owned ? `Lv.${owned}` : "New"} · ${formatCompact(cost)} energy`} /> : null;
           })}
         </>
       ) : null}
@@ -919,6 +951,7 @@ function SolarSystem({
         const orbitRadius = Math.min(280, 162 + planet.orbitIndex * 34 + index * 22);
         const orbitDuration = 20 + planet.orbitIndex * 5 + index * 2;
         const initialDelay = -(planet.angle / 360) * orbitDuration;
+        const planetVisual = getPlanetVisual(planet, type.color);
         return (
           <div
             key={planet.id}
@@ -934,20 +967,30 @@ function SolarSystem({
             }}
           >
             <div className="orbit-ring" style={{ width: orbitRadius * 2, height: orbitRadius * 2, opacity: 0.55 }} />
-            <button
-              style={{
-                ...styles.planetDot,
-                left: orbitRadius,
-                top: 0,
-                width: 34 + planet.stage * 2,
-                height: 34 + planet.stage * 2,
-                background: `radial-gradient(circle at 35% 30%, rgba(255,255,255,0.35), ${type.color})`,
-                boxShadow: selectedPlanet?.id === planet.id ? `0 0 24px ${type.color}` : `0 0 12px ${type.color}66`,
-              }}
-              onClick={() => onSelectPlanet(planet.id)}
-            >
-            </button>
-            <div style={{ ...styles.planetName, marginTop: 16 }}>{planet.name}</div>
+            <div style={{ position: "absolute", left: orbitRadius, top: 0, zIndex: 3, display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <button
+                style={{
+                  ...styles.planetDot,
+                  width: planetVisual.size,
+                  height: planetVisual.size,
+                  boxShadow: selectedPlanet?.id === planet.id ? planetVisual.selectedGlow : planetVisual.glow,
+                }}
+                onClick={() => onSelectPlanet(planet.id)}
+              >
+                <div style={planetVisual.atmosphere} />
+                <div style={planetVisual.halo} />
+                <div style={planetVisual.body}>
+                  <div style={planetVisual.shadow} />
+                  <div style={planetVisual.highlights} />
+                  <div style={planetVisual.features} />
+                  <div style={planetVisual.lifeBand} />
+                  <div style={planetVisual.cityLights} />
+                  <div style={planetVisual.clouds} />
+                </div>
+                <div style={planetVisual.limbLight} />
+              </button>
+              <div style={{ ...styles.planetName, marginTop: 30, zIndex: 4, transform: "translateX(-50%)" }}>{planet.name}</div>
+            </div>
           </div>
         );
       })}
@@ -967,6 +1010,320 @@ function getParticleStyle(index: number, burstSeed: number): CSSProperties {
     top: `calc(50% + ${Math.sin(angle) * distance}px)`,
     animationDelay: `${burstSeed * 8 + index * 20}ms`,
     transform: `translate(-50%, -50%) rotate(${burstSeed * 18 + index * 24}deg)`,
+  };
+}
+
+function hashString(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function seededRandomFactory(seedValue: string) {
+  let seed = hashString(seedValue) || 1;
+  return () => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return ((seed >>> 0) % 1000000) / 1000000;
+  };
+}
+
+function getPlanetPalette(stage: number, baseColor: string, isCitiesUnlocked: boolean) {
+  if (stage <= 1) {
+    return {
+      base: "#6f6258",
+      highlight: "#b59b7f",
+      shadow: "#27201b",
+      atmosphere: "rgba(255, 160, 80, 0.12)",
+      glow: "rgba(255, 139, 61, 0.18)",
+      ocean: "#4a5b63",
+      land: "#72655a",
+      ice: "rgba(255, 235, 214, 0.12)",
+      cloud: "rgba(255, 239, 220, 0.08)",
+      city: "rgba(255, 220, 144, 0.08)",
+      specular: "rgba(255, 238, 209, 0.12)",
+      surface: baseColor,
+      ring: "rgba(255, 198, 126, 0.18)",
+      limb: "rgba(255, 184, 108, 0.18)",
+    };
+  }
+
+  if (stage === 2) {
+    return {
+      base: "#8c8a84",
+      highlight: "#dfd8cd",
+      shadow: "#2b2d31",
+      atmosphere: "rgba(166, 186, 211, 0.12)",
+      glow: "rgba(167, 187, 214, 0.16)",
+      ocean: "#4b5861",
+      land: "#7d776f",
+      ice: "rgba(247, 248, 250, 0.06)",
+      cloud: "rgba(236, 242, 247, 0.04)",
+      city: "rgba(255, 255, 230, 0.05)",
+      specular: "rgba(255, 255, 255, 0.06)",
+      surface: baseColor,
+      ring: "rgba(214, 222, 236, 0.15)",
+      limb: "rgba(192, 203, 217, 0.16)",
+    };
+  }
+
+  if (stage === 3) {
+    return {
+      base: "#4f6578",
+      highlight: "#d7e7f8",
+      shadow: "#1c2430",
+      atmosphere: "rgba(110, 171, 214, 0.24)",
+      glow: "rgba(117, 186, 232, 0.22)",
+      ocean: "#415e7f",
+      land: "#6d7a71",
+      ice: "rgba(242, 246, 252, 0.22)",
+      cloud: "rgba(246, 250, 255, 0.42)",
+      city: "rgba(255, 248, 214, 0.05)",
+      specular: "rgba(255, 255, 255, 0.18)",
+      surface: baseColor,
+      ring: "rgba(169, 208, 236, 0.22)",
+      limb: "rgba(152, 203, 238, 0.2)",
+    };
+  }
+
+  if (stage === 4) {
+    return {
+      base: "#416d9f",
+      highlight: "#ebf7ff",
+      shadow: "#132336",
+      atmosphere: "rgba(117, 185, 255, 0.34)",
+      glow: "rgba(126, 190, 255, 0.32)",
+      ocean: "#285f9d",
+      land: "#5b7f5f",
+      ice: "rgba(246, 251, 255, 0.86)",
+      cloud: "rgba(250, 252, 255, 0.62)",
+      city: "rgba(255, 242, 194, 0.05)",
+      specular: "rgba(255, 255, 255, 0.42)",
+      surface: baseColor,
+      ring: "rgba(182, 225, 255, 0.26)",
+      limb: "rgba(159, 224, 255, 0.3)",
+    };
+  }
+
+  if (stage === 5) {
+    return {
+      base: "#2f683d",
+      highlight: "#effbf0",
+      shadow: "#13261a",
+      atmosphere: "rgba(144, 218, 255, 0.34)",
+      glow: "rgba(131, 214, 174, 0.24)",
+      ocean: "#2d5f91",
+      land: "#6c9f52",
+      ice: "rgba(240, 249, 255, 0.7)",
+      cloud: "rgba(248, 252, 255, 0.58)",
+      city: "rgba(255, 237, 172, 0.06)",
+      specular: "rgba(255, 255, 255, 0.34)",
+      surface: baseColor,
+      ring: "rgba(168, 236, 213, 0.2)",
+      limb: "rgba(157, 233, 233, 0.25)",
+    };
+  }
+
+  return {
+    base: "#275643",
+    highlight: "#edfdf1",
+    shadow: "#0f1d16",
+    atmosphere: "rgba(114, 215, 181, 0.34)",
+    glow: "rgba(114, 215, 181, 0.28)",
+    ocean: "#214b7a",
+    land: "#3e7a47",
+    ice: "rgba(240, 250, 255, 0.68)",
+    cloud: "rgba(248, 252, 255, 0.54)",
+    city: isCitiesUnlocked ? "rgba(255, 228, 154, 0.62)" : "rgba(255, 228, 154, 0.06)",
+    specular: "rgba(255, 255, 255, 0.3)",
+    surface: baseColor,
+    ring: "rgba(159, 233, 182, 0.18)",
+    limb: "rgba(159, 233, 182, 0.22)",
+  };
+}
+
+function getPlanetVisual(planet: Planet, baseColor: string) {
+  const stage = planet.stage;
+  const planetSeed = seededRandomFactory(`${planet.id}:${planet.orbitIndex}:${planet.stage}`);
+  const palette = getPlanetPalette(stage, baseColor, stage >= 6);
+  const size = Math.max(44, 40 + Math.min(planet.size * 5.5, 16) + stage * 0.8);
+  const shiftX = Math.round((planetSeed() * 14) - 7);
+  const shiftY = Math.round((planetSeed() * 10) - 5);
+  const textureScale = 96 + Math.round(planetSeed() * 22);
+  const craterCount = stage <= 2 ? 8 : stage === 3 ? 4 : 2;
+  const craterLayers = Array.from({ length: craterCount }).map((_, index) => {
+    const x = Math.round(18 + planetSeed() * 64);
+    const y = Math.round(18 + planetSeed() * 64);
+    const radius = Math.round(2 + planetSeed() * 5 + index * 0.3);
+    return `radial-gradient(circle at ${x}% ${y}%, rgba(0,0,0,0.32) 0 ${radius}px, transparent ${radius + 1}px)`;
+  });
+  const ridgeBands = Array.from({ length: 4 }).map((_, index) => {
+    const y = Math.round(18 + index * 18 + planetSeed() * 8);
+    const alpha = 0.1 + planetSeed() * 0.08;
+    return `linear-gradient(${8 + index * 18}deg, transparent 0 42%, rgba(255,255,255,${alpha}) 48%, transparent 54%)`;
+  });
+  const continentBands = Array.from({ length: 4 }).map((_, index) => {
+    const x = Math.round(18 + planetSeed() * 62);
+    const y = Math.round(18 + planetSeed() * 62);
+    const width = 16 + Math.round(planetSeed() * 18 + index * 3);
+    const height = 10 + Math.round(planetSeed() * 12 + index * 2);
+    const rotate = Math.round(planetSeed() * 140 - 70);
+    return `radial-gradient(ellipse ${width}% ${height}% at ${x}% ${y}%, rgba(0,0,0,0.05) 0 32%, rgba(0,0,0,0.14) 46%, transparent 72%)`;
+  });
+  const oceanBands = Array.from({ length: 3 }).map((_, index) => {
+    const x = Math.round(22 + planetSeed() * 55);
+    const y = Math.round(22 + planetSeed() * 55);
+    const width = 34 + Math.round(planetSeed() * 18);
+    const height = 16 + Math.round(planetSeed() * 8);
+    return `radial-gradient(ellipse ${width}% ${height}% at ${x}% ${y}%, rgba(255,255,255,${0.05 + index * 0.02}) 0 18%, transparent 54%)`;
+  });
+  const cloudLayers = Array.from({ length: stage >= 3 ? 5 : 2 }).map((_, index) => {
+    const x = Math.round(20 + planetSeed() * 54 + index * 6 - 10);
+    const y = Math.round(18 + planetSeed() * 40 + index * 7 - 6);
+    const width = 18 + Math.round(planetSeed() * 12);
+    const height = 8 + Math.round(planetSeed() * 6);
+    return `radial-gradient(ellipse ${width}% ${height}% at ${x}% ${y}%, ${palette.cloud} 0 38%, transparent 70%)`;
+  });
+  const vegetationBands = stage >= 5 ? Array.from({ length: 4 }).map((_, index) => {
+    const x = Math.round(20 + planetSeed() * 54 + index * 6 - 8);
+    const y = Math.round(30 + planetSeed() * 28 + index * 8 - 5);
+    const width = 20 + Math.round(planetSeed() * 10);
+    const height = 9 + Math.round(planetSeed() * 5);
+    return `radial-gradient(ellipse ${width}% ${height}% at ${x}% ${y}%, rgba(106, 193, 92, ${0.16 + planetSeed() * 0.1}) 0 28%, transparent 72%)`;
+  }) : [];
+  const cityBands = stage >= 6 ? Array.from({ length: 3 }).map(() => {
+    const x = Math.round(24 + planetSeed() * 48);
+    const y = Math.round(24 + planetSeed() * 44);
+    const width = 8 + Math.round(planetSeed() * 7);
+    const height = 4 + Math.round(planetSeed() * 4);
+    return `radial-gradient(ellipse ${width}% ${height}% at ${x}% ${y}%, ${palette.city} 0 40%, transparent 70%)`;
+  }) : [];
+
+  const baseGradientByStage = [
+    `radial-gradient(circle at ${45 + shiftX * 0.15}% ${34 + shiftY * 0.12}%, rgba(255,223,183,0.96) 0%, rgba(203,126,64,0.95) 16%, rgba(95,68,55,0.98) 42%, rgba(47,33,32,1) 72%, rgba(13,12,14,1) 100%)`,
+    `radial-gradient(circle at ${42 + shiftX * 0.2}% ${35 + shiftY * 0.12}%, rgba(255,246,228,0.95) 0%, rgba(201,181,165,0.97) 18%, rgba(110,110,112,1) 46%, rgba(52,52,56,1) 76%, rgba(16,18,24,1) 100%)`,
+    `radial-gradient(circle at ${40 + shiftX * 0.2}% ${34 + shiftY * 0.14}%, rgba(255,252,248,0.94) 0%, rgba(171,198,223,0.92) 15%, rgba(77,113,144,0.96) 40%, rgba(29,45,68,1) 74%, rgba(7,12,22,1) 100%)`,
+    `radial-gradient(circle at ${40 + shiftX * 0.2}% ${33 + shiftY * 0.14}%, rgba(255,255,255,0.98) 0%, rgba(165,220,255,0.95) 14%, rgba(50,116,184,0.97) 38%, rgba(20,53,102,1) 72%, rgba(6,10,18,1) 100%)`,
+    `radial-gradient(circle at ${40 + shiftX * 0.2}% ${33 + shiftY * 0.14}%, rgba(255,255,255,0.98) 0%, rgba(176,224,208,0.94) 14%, rgba(57,123,108,0.97) 38%, rgba(18,57,76,1) 72%, rgba(6,11,18,1) 100%)`,
+    `radial-gradient(circle at ${40 + shiftX * 0.2}% ${33 + shiftY * 0.14}%, rgba(255,255,255,0.98) 0%, rgba(188,234,179,0.94) 14%, rgba(54,126,73,0.97) 38%, rgba(18,54,44,1) 72%, rgba(5,11,16,1) 100%)`,
+    `radial-gradient(circle at ${40 + shiftX * 0.2}% ${33 + shiftY * 0.14}%, rgba(255,255,255,0.98) 0%, rgba(200,240,205,0.94) 13%, rgba(41,108,84,0.97) 38%, rgba(16,44,50,1) 72%, rgba(5,10,15,1) 100%)`,
+  ];
+
+  const surfaceLayers = [
+    ...craterLayers,
+    ...ridgeBands,
+    ...(stage >= 3 ? oceanBands : []),
+    ...continentBands,
+    ...vegetationBands,
+    ...cityBands,
+    ...cloudLayers,
+  ].join(", ");
+
+  const hasAtmosphere = stage >= 3;
+  const atmosphereOpacity = stage >= 4 ? 0.95 : 0.78;
+
+  return {
+    size: `${size}px`,
+    glow: `0 0 12px ${palette.glow}, 0 0 24px rgba(0,0,0,0.2)`,
+    selectedGlow: `0 0 24px ${palette.glow}, 0 0 42px rgba(0,0,0,0.28)`,
+    atmosphere: {
+      position: "absolute",
+      inset: -7,
+      borderRadius: "50%",
+      background: `radial-gradient(circle at 40% 34%, ${palette.atmosphere} 0%, transparent 62%)`,
+      opacity: atmosphereOpacity,
+      filter: "blur(1px)",
+      pointerEvents: "none",
+    } as CSSProperties,
+    halo: {
+      position: "absolute",
+      inset: -12,
+      borderRadius: "50%",
+      background: `radial-gradient(circle, ${palette.ring} 0%, transparent 65%)`,
+      opacity: hasAtmosphere ? 0.7 : 0.35,
+      filter: "blur(3px)",
+      pointerEvents: "none",
+    } as CSSProperties,
+    body: {
+      position: "relative",
+      width: "100%",
+      height: "100%",
+      borderRadius: "50%",
+      overflow: "hidden",
+      backgroundImage: `${surfaceLayers}, ${baseGradientByStage[Math.min(stage, baseGradientByStage.length - 1)]}`,
+      backgroundSize: `${textureScale}% ${textureScale}%`,
+      backgroundPosition: `${46 + shiftX * 0.2}% ${42 + shiftY * 0.2}%`,
+      backgroundBlendMode: "screen, multiply, multiply, multiply, screen, screen, screen, screen, screen, screen, screen, overlay",
+      boxShadow: `inset -${Math.max(10, size * 0.14)}px -${Math.max(12, size * 0.16)}px ${Math.max(16, size * 0.2)}px rgba(0,0,0,0.72), inset ${Math.max(8, size * 0.1)}px ${Math.max(6, size * 0.08)}px ${Math.max(10, size * 0.14)}px rgba(255,255,255,0.12), inset 0 0 0 1px rgba(255,255,255,0.08)`,
+      transform: "rotate(-12deg)",
+      animation: `planet-spin ${20 + planet.stage * 3 + (planet.orbitIndex % 4) * 2}s linear infinite`,
+      willChange: "transform",
+    } as CSSProperties,
+    shadow: {
+      position: "absolute",
+      inset: 0,
+      borderRadius: "50%",
+      background: "linear-gradient(100deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.015) 24%, rgba(0,0,0,0.24) 54%, rgba(0,0,0,0.82) 100%)",
+      mixBlendMode: "multiply",
+      pointerEvents: "none",
+    } as CSSProperties,
+    highlights: {
+      position: "absolute",
+      inset: 0,
+      borderRadius: "50%",
+      background: `radial-gradient(circle at 28% 28%, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.12) 12%, transparent 28%), radial-gradient(circle at 64% 28%, ${palette.specular} 0%, transparent 18%)`,
+      opacity: stage >= 3 ? 0.9 : 0.75,
+      pointerEvents: "none",
+    } as CSSProperties,
+    features: {
+      position: "absolute",
+      inset: 0,
+      borderRadius: "50%",
+      background: `radial-gradient(circle at ${48 + shiftX * 0.4}% ${58 + shiftY * 0.22}%, rgba(0,0,0,0.46) 0 5%, transparent 6%), radial-gradient(circle at ${28 + shiftX * 0.36}% ${66 + shiftY * 0.18}%, rgba(0,0,0,0.34) 0 3.8%, transparent 5%)`,
+      opacity: stage <= 2 ? 1 : 0.45,
+      pointerEvents: "none",
+      mixBlendMode: "multiply",
+    } as CSSProperties,
+    lifeBand: {
+      position: "absolute",
+      inset: 0,
+      borderRadius: "50%",
+      background: stage >= 5 ? `radial-gradient(circle at 38% 48%, transparent 0 38%, rgba(126, 214, 89, 0.28) 45%, rgba(69, 149, 68, 0.24) 58%, transparent 74%)` : "transparent",
+      mixBlendMode: "screen",
+      pointerEvents: "none",
+      opacity: stage >= 5 ? 1 : 0,
+    } as CSSProperties,
+    cityLights: {
+      position: "absolute",
+      inset: 0,
+      borderRadius: "50%",
+      background: stage >= 6 ? `radial-gradient(circle at ${63 + shiftX * 0.2}% ${56 + shiftY * 0.2}%, ${palette.city} 0 2.4%, transparent 4%), radial-gradient(circle at ${52 + shiftX * 0.16}% ${61 + shiftY * 0.16}%, ${palette.city} 0 1.8%, transparent 3.4%), radial-gradient(circle at ${36 + shiftX * 0.18}% ${50 + shiftY * 0.14}%, ${palette.city} 0 1.4%, transparent 3%)` : "transparent",
+      opacity: stage >= 6 ? 0.95 : 0,
+      mixBlendMode: "screen",
+      pointerEvents: "none",
+      animation: stage >= 6 ? "city-lights 16s ease-in-out infinite" : undefined,
+    } as CSSProperties,
+    clouds: {
+      position: "absolute",
+      inset: 0,
+      borderRadius: "50%",
+      background: stage >= 3 ? `radial-gradient(circle at ${30 + shiftX * 0.2}% ${34 + shiftY * 0.2}%, rgba(255,255,255,0.28) 0 8%, transparent 12%), radial-gradient(circle at ${58 + shiftX * 0.16}% ${42 + shiftY * 0.16}%, rgba(255,255,255,0.22) 0 9%, transparent 14%), radial-gradient(circle at ${44 + shiftX * 0.2}% ${68 + shiftY * 0.12}%, rgba(255,255,255,0.16) 0 7%, transparent 13%)` : "transparent",
+      opacity: stage >= 3 ? 0.88 : 0,
+      mixBlendMode: "screen",
+      pointerEvents: "none",
+      animation: stage >= 3 ? "planet-cloud-drift 14s linear infinite" : undefined,
+    } as CSSProperties,
+    limbLight: {
+      position: "absolute",
+      inset: -3,
+      borderRadius: "50%",
+      boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.03), inset -${Math.max(6, size * 0.08)}px 0 ${Math.max(10, size * 0.12)}px rgba(0,0,0,0.42), inset ${Math.max(5, size * 0.06)}px 0 ${Math.max(8, size * 0.08)}px ${palette.limb}`,
+      pointerEvents: "none",
+    } as CSSProperties,
   };
 }
 
@@ -1045,16 +1402,27 @@ function TopBar({
   return (
     <header className="topbar">
       <div className="brand">STELLAR GENESIS</div>
-      <div className="flex flex-wrap gap-3">
-        <div style={styles.kicker}>Stellar Genesis</div>
-        <div style={styles.topBarTitle}>Energy {formatNumber(state.energy, state.settings.numberFormat)}</div>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3 sm:gap-4">
+        <div className="min-w-0">
+          <div style={styles.kicker}>Observation system</div>
+          <div style={styles.topBarSubtitle}>Manage the star and expand the system.</div>
+        </div>
+        <div style={styles.energyCapsule}>
+          <div style={styles.energyIcon} aria-hidden="true">
+            ✦
+          </div>
+          <div>
+            <div style={styles.energyLabel}>Stellar Energy</div>
+            <div style={styles.energyValue}>{formatNumber(state.energy, state.settings.numberFormat)}</div>
+          </div>
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2 text-xs text-[#d4deee] sm:gap-3 sm:text-sm" style={styles.resourceStrip}>
-        <span>EPS {formatNumber(production.energyPerSecond, state.settings.numberFormat)}</span>
-        <span>Biomass {formatNumber(state.biomass, state.settings.numberFormat)}</span>
-        <span>Research {formatNumber(state.researchData, state.settings.numberFormat)}</span>
-        <span>Population {formatNumber(state.population, state.settings.numberFormat)}</span>
-        <span>Essence {formatNumber(state.cosmicEssence, state.settings.numberFormat)}</span>
+      <div className="flex flex-wrap gap-2 sm:gap-3" style={styles.resourceStrip}>
+        <span style={styles.resourcePill}>EPS {formatNumber(production.energyPerSecond, state.settings.numberFormat)}</span>
+        <span style={styles.resourcePill}>Biomass {formatNumber(state.biomass, state.settings.numberFormat)}</span>
+        <span style={styles.resourcePill}>Research {formatNumber(state.researchData, state.settings.numberFormat)}</span>
+        <span style={styles.resourcePill}>Population {formatNumber(state.population, state.settings.numberFormat)}</span>
+        <span style={styles.resourcePill}>Essence {formatNumber(state.cosmicEssence, state.settings.numberFormat)}</span>
       </div>
       <div className="flex items-center gap-2" style={styles.actionRow}>
         <button style={styles.secondaryButton} onClick={onBackToStart}>Start</button>
@@ -1163,9 +1531,7 @@ const styles: Record<string, CSSProperties> = {
     backdropFilter: "blur(2px)",
     boxShadow: "none",
   },
-  kicker: { letterSpacing: "0.28em", fontSize: 11, color: "#9eacc1", textTransform: "uppercase", fontFamily: "JetBrains Mono, monospace" },
-  title: { margin: "14px 0 10px", fontSize: "clamp(3rem, 7vw, 5rem)", lineHeight: 0.95, letterSpacing: "0.08em", fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, textShadow: "0 2px 40px rgba(242,138,91,0.3), 0 0 80px rgba(115,106,174,0.25)" },
-  subtitle: { maxWidth: 560, color: "#d4deee", lineHeight: 1.7, marginBottom: 28, fontFamily: "Inter, sans-serif", fontWeight: 300 },
+  kicker: { letterSpacing: "0.24em", fontSize: 10, color: "#9eacc1", textTransform: "uppercase", fontFamily: "JetBrains Mono, monospace" },
   startButtons: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 24 },
   primaryButton: { border: "1px solid #f28a5b", background: "rgba(242,138,91,0.12)", color: "#f28a5b", padding: "12px 18px", borderRadius: 4, cursor: "pointer", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "Space Grotesk, sans-serif" },
   secondaryButton: { border: "1px solid rgba(169,199,223,0.2)", background: "transparent", color: "#9eacc1", padding: "12px 18px", borderRadius: 4, cursor: "pointer", fontFamily: "Inter, sans-serif" },
@@ -1175,9 +1541,15 @@ const styles: Record<string, CSSProperties> = {
   previewLabel: { fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "#9eacc1", marginBottom: 6 },
   previewValue: { fontSize: 16, color: "#f6f2e8" },
   gameRoot: { minHeight: "100vh", display: "flex", flexDirection: "column", background: "#071326", color: "#f6f2e8", fontFamily: "Inter, sans-serif" },
-  topBar: { display: "flex", gap: 18, alignItems: "center", justifyContent: "space-between", padding: "10px 24px", borderBottom: "1px solid rgba(169,199,223,0.1)", background: "rgba(7,19,38,0.82)", backdropFilter: "blur(12px)", fontFamily: "JetBrains Mono, monospace" },
-  topBarTitle: { fontSize: 18, fontWeight: 700, marginTop: 4 },
-  resourceStrip: { display: "flex", gap: 14, flexWrap: "wrap", color: "#d4deee", fontSize: 13 },
+  topBar: { display: "flex", gap: 16, alignItems: "center", justifyContent: "space-between", padding: "8px 20px", borderBottom: "1px solid rgba(169,199,223,0.1)", background: "rgba(7,19,38,0.82)", backdropFilter: "blur(12px)", fontFamily: "JetBrains Mono, monospace" },
+  topBarSubtitle: { marginTop: 2, fontSize: 11, lineHeight: 1.25, color: "#d4deee", opacity: 0.84 },
+  topBarTitle: { fontSize: 16, fontWeight: 700, marginTop: 2 },
+  energyCapsule: { display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 999, background: "linear-gradient(180deg, rgba(242,138,91,0.15), rgba(7,19,38,0.72))", border: "1px solid rgba(242,138,91,0.26)", boxShadow: "0 0 0 1px rgba(255,241,199,0.03) inset, 0 0 24px rgba(242,138,91,0.12)" },
+  energyIcon: { width: 24, height: 24, borderRadius: "50%", display: "grid", placeItems: "center", color: "#fff1c7", background: "radial-gradient(circle, rgba(255,248,214,1) 0%, rgba(255,217,122,0.95) 38%, rgba(242,138,91,0.9) 72%, rgba(139,58,26,0.18) 100%)", boxShadow: "0 0 12px rgba(255,217,122,0.45), 0 0 20px rgba(242,138,91,0.22)", fontSize: 12 },
+  energyLabel: { fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: "#9eacc1", fontFamily: "JetBrains Mono, monospace" },
+  energyValue: { fontSize: 16, fontWeight: 700, lineHeight: 1.1, color: "#f6f2e8", fontFamily: "Space Grotesk, sans-serif" },
+  resourceStrip: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: "#d4deee", fontSize: 11 },
+  resourcePill: { padding: "6px 9px", borderRadius: 999, border: "1px solid rgba(169,199,223,0.12)", background: "rgba(7,19,38,0.42)", backdropFilter: "blur(8px)" },
   actionRow: { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" },
   mainGrid: { display: "grid", gridTemplateColumns: "56px minmax(0, 1fr) 280px", minHeight: 0, flex: 1 },
   navRail: { display: "flex", flexDirection: "column", gap: 4, paddingTop: 16, alignItems: "center", borderRight: "1px solid rgba(169,199,223,0.08)", background: "rgba(7,19,38,0.58)" },
@@ -1192,6 +1564,9 @@ const styles: Record<string, CSSProperties> = {
   cardTitle: { fontSize: 15, fontWeight: 700, marginBottom: 6 },
   cardMeta: { fontSize: 12, color: "#9eacc1", lineHeight: 1.5 },
   sectionCopy: { color: "#d4deee", fontSize: 13, lineHeight: 1.7, padding: "0 2px" },
+  subnavRow: { display: "flex", gap: 8, flexWrap: "wrap", margin: "4px 0 10px" },
+  subnavButton: { border: "1px solid rgba(169,199,223,0.12)", background: "rgba(7,19,38,0.34)", color: "#d4deee", padding: "7px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
+  subnavButtonActive: { border: "1px solid rgba(242,138,91,0.35)", background: "rgba(242,138,91,0.16)", color: "#fff1c7", padding: "7px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
   planetCard: { border: "1px solid rgba(169,199,223,0.1)", borderRadius: 18, background: "rgba(12,28,54,0.48)", padding: 14, cursor: "pointer" },
   planetCardActive: { border: "1px solid rgba(242,138,91,0.3)", borderRadius: 18, background: "rgba(242,138,91,0.08)", padding: 14, cursor: "pointer" },
   planetDetailCard: { border: "1px solid rgba(169,199,223,0.1)", borderRadius: 18, background: "rgba(12,28,54,0.48)", padding: 14 },
@@ -1217,7 +1592,7 @@ const styles: Record<string, CSSProperties> = {
   starLabel: { marginTop: 8, fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase" },
   starMeta: { fontSize: 12, color: "#d4deee", marginTop: 4 },
   planetDot: { position: "absolute", borderRadius: "50%", border: "none", display: "grid", placeItems: "center", cursor: "pointer", transform: "translate(-50%, -50%)", color: "#f6f2e8", background: "transparent" },
-  planetName: { marginTop: 10, fontSize: 14, fontWeight: 700, letterSpacing: "0.04em", textShadow: "0 1px 2px rgba(0,0,0,0.5)", textAlign: "center", whiteSpace: "nowrap" },
+  planetName: { marginTop: 20, fontSize: 11, fontWeight: 700, letterSpacing: "0.03em", textShadow: "0 1px 2px rgba(0,0,0,0.5)", textAlign: "center", whiteSpace: "nowrap" },
   planetSub: { fontSize: 9, color: "rgba(255,255,255,0.86)", textShadow: "0 1px 2px rgba(0,0,0,0.5)" },
   systemHud: { position: "absolute", left: 18, bottom: 18, zIndex: 2, padding: "10px 12px", borderRadius: 16, background: "rgba(7,19,38,0.7)", border: "1px solid rgba(169,199,223,0.12)", color: "#d4deee", fontSize: 12, lineHeight: 1.6 },
   eventCard: { position: "absolute", right: 18, top: 18, zIndex: 3, maxWidth: 320, padding: 14, borderRadius: 18, background: "rgba(18,39,71,0.82)", border: "1px solid rgba(242,138,91,0.25)", boxShadow: "0 20px 80px rgba(0,0,0,0.35)" },
