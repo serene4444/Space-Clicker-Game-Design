@@ -19,9 +19,11 @@ import { formatCompact, formatNumber } from "@/utilities/format";
 import { getAutomationCost, getEvolveCost, getPlanetCost, getPrestigeEssenceGain, getPrestigeUpgradeCost, getResearchCost, getSpecializationCost, getUpgradeCost } from "@/utilities/costs";
 import type { GameStateData, Planet, TabId } from "@/types/game";
 import stationBg from "@/imports/download__78_.jpg";
-import spaceFieldBg from "@/imports/OwO.jpg";
+
+const SPACE_FIELD_URL = "https://images.unsplash.com/photo-1614580378008-5c4d5f0cf4b5?w=3840&h=2160&q=95";
 
 type Screen = "start" | "game";
+type LayoutMode = "mobile" | "tablet" | "desktop";
 
 const NAV_TABS: { id: TabId; label: string }[] = [
   { id: "system", label: "System" },
@@ -59,9 +61,33 @@ function formatDuration(ms: number) {
   return `${hours}:${minutes}:${seconds}`;
 }
 
+function useLayoutMode() {
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("desktop");
+
+  useEffect(() => {
+    const updateLayoutMode = () => {
+      const width = window.innerWidth;
+      if (width < 768) {
+        setLayoutMode("mobile");
+      } else if (width < 1024) {
+        setLayoutMode("tablet");
+      } else {
+        setLayoutMode("desktop");
+      }
+    };
+
+    updateLayoutMode();
+    window.addEventListener("resize", updateLayoutMode);
+    return () => window.removeEventListener("resize", updateLayoutMode);
+  }, []);
+
+  return layoutMode;
+}
+
 function App() {
   const [screen, setScreen] = useState<Screen>("start");
   const [offlineSummary, setOfflineSummary] = useState<OfflineSummary | null>(null);
+  const layoutMode = useLayoutMode();
   const saveSystem = useSaveSystem(screen === "game");
   useGameLoop(screen === "game");
   const preview = useMemo(() => readPreviewSave(), [screen]);
@@ -83,7 +109,7 @@ function App() {
 
   return (
     <>
-      <Toaster position="top-right" richColors />
+      <Toaster position={layoutMode === "mobile" ? "top-center" : "top-right"} richColors />
       {screen === "start" ? (
         <StartScreen
           continueAvailable={hasStoredSave()}
@@ -93,6 +119,7 @@ function App() {
         />
       ) : (
         <GameScreen
+          layoutMode={layoutMode}
           saveSystem={saveSystem}
           offlineSummary={offlineSummary}
           onClearOfflineSummary={() => setOfflineSummary(null)}
@@ -170,11 +197,13 @@ function PreviewStat({ label, value }: { label: string; value: string }) {
 }
 
 function GameScreen({
+  layoutMode,
   saveSystem,
   offlineSummary,
   onClearOfflineSummary,
   onBackToStart,
 }: {
+  layoutMode: LayoutMode;
   saveSystem: ReturnType<typeof useSaveSystem>;
   offlineSummary: OfflineSummary | null;
   onClearOfflineSummary: () => void;
@@ -188,6 +217,7 @@ function GameScreen({
   const [showPlanetPicker, setShowPlanetPicker] = useState(false);
   const [showPrestigeConfirm, setShowPrestigeConfirm] = useState(false);
   const [saveText, setSaveText] = useState("");
+  const isMobile = layoutMode === "mobile";
 
   useEffect(() => {
     if (offlineSummary) {
@@ -252,18 +282,12 @@ function GameScreen({
   };
 
   return (
-    <div style={styles.gameRoot}>
-      <TopBar state={state} production={production} onBackToStart={onBackToStart} onOpenSettings={() => setShowSettings(true)} />
-      <div style={styles.mainGrid}>
-        <nav style={styles.navRail}>
-          {NAV_TABS.map((tab) => (
-            <button key={tab.id} onClick={() => useGameStore.getState().setActiveTab(tab.id)} style={tab.id === state.activeTab ? styles.navActive : styles.navButton}>
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
-        <section style={styles.centerPanel}>
+    <div className={isMobile ? "sg-app reduced-motion" : "sg-app"} style={styles.gameRoot}>
+      <Starfield />
+      <TopBar layoutMode={layoutMode} state={state} production={production} onBackToStart={onBackToStart} onOpenSettings={() => setShowSettings(true)} />
+      <div className="body-wrap">
+        <Sidebar tab={state.activeTab} setTab={(value) => useGameStore.getState().setActiveTab(value as TabId)} canPrestige={state.totalEarned >= BALANCE.prestigeThreshold} />
+        <div className="center-panel">
           <SolarSystem
             state={state}
             selectedPlanet={selectedPlanet}
@@ -278,128 +302,50 @@ function GameScreen({
             if (!result.ok) toast.error(result.reason);
           }} /> : null}
           {offlineSummary ? (
-            <Overlay title="Welcome back" onClose={onClearOfflineSummary}>
+            <Overlay layoutMode={layoutMode} title="Welcome back" onClose={onClearOfflineSummary}>
               <div style={styles.sectionCopy}>Offline progress has been applied.</div>
               <div style={styles.previewGrid}>
                 <PreviewStat label="Energy gained" value={formatCompact(offlineSummary.energyGained)} />
               </div>
             </Overlay>
           ) : null}
-        </section>
-
-        <aside style={styles.sidePanel}>
-          <div style={styles.sideHeader}>{activeTabLabel}</div>
-          {state.activeTab === "system" ? (
-            <PanelScroll>
-              <div style={styles.sectionCopy}>
-                {selectedPlanet ? `Selected planet: ${selectedPlanet.name}` : `Selected star: ${getStarClass(state.starClassId).name}`}
-              </div>
-              {selectedPlanet ? (
-                <PlanetDetailCard planet={selectedPlanet} state={state} onEvolve={evolvePlanet} onSpecialize={specializePlanet} />
-              ) : (
-                <div style={styles.sectionCopy}>The star is the core of the system. Click it for energy and use upgrades to increase its output.</div>
-              )}
-              {UPGRADES.map((upgrade) => {
-                const owned = state.upgrades[upgrade.id] ?? 0;
-                const cost = getUpgradeCost(upgrade.id, owned);
-                const unlocked = state.totalEarned >= (upgrade.unlockTotalEarned ?? 0);
-                return unlocked ? <ActionCard key={upgrade.id} title={upgrade.name} desc={upgrade.description} meta={upgrade.category} enabled={state.energy >= cost} onClick={() => buyUpgrade(upgrade.id)} right={`${formatCompact(cost)} energy`} /> : null;
-              })}
-            </PanelScroll>
-          ) : null}
-
-          {state.activeTab === "planets" ? (
-            <PanelScroll>
-              <ActionCard title="Create planet" desc={`Choose a world type. Cost ${formatCompact(getPlanetCost(state.planets.length))} energy.`} meta={`${state.planets.length}/${BALANCE.maxPlanets} planets`} enabled={state.energy >= getPlanetCost(state.planets.length) && state.planets.length < BALANCE.maxPlanets} onClick={() => setShowPlanetPicker(true)} />
-              {state.planets.map((planet) => (
-                <PlanetListCard
-                  key={planet.id}
-                  planet={planet}
-                  state={state}
-                  onSelect={() => useGameStore.getState().selectTarget(planet.id)}
-                  onEvolve={evolvePlanet}
-                  onSpecialize={specializePlanet}
-                />
-              ))}
-            </PanelScroll>
-          ) : null}
-
-          {state.activeTab === "upgrades" ? (
-            <PanelScroll>
-              <div style={styles.sectionCopy}>Upgrade categories improve click power, passive energy, and planetary growth.</div>
-              {UPGRADES.map((upgrade) => {
-                const owned = state.upgrades[upgrade.id] ?? 0;
-                const cost = getUpgradeCost(upgrade.id, owned);
-                const unlocked = state.totalEarned >= (upgrade.unlockTotalEarned ?? 0);
-                return unlocked ? <ActionCard key={upgrade.id} title={upgrade.name} desc={upgrade.description} meta={upgrade.category} enabled={state.energy >= cost} onClick={() => buyUpgrade(upgrade.id)} right={`${formatCompact(cost)} energy`} /> : null;
-              })}
-            </PanelScroll>
-          ) : null}
-
-          {state.activeTab === "research" ? (
-            <PanelScroll>
-              {RESEARCH_NODES.map((node) => {
-                const cost = getResearchCost(node.id, state.research[node.id] ? 1 : 0);
-                const available = node.prerequisites.every((prerequisite) => state.research[prerequisite]);
-                return <ActionCard key={node.id} title={node.name} desc={node.description} meta={`${node.branch} | ${available ? "Available" : "Locked"}`} enabled={available && state.researchData >= cost && !state.research[node.id]} onClick={() => buyResearch(node.id)} right={`${formatCompact(cost)} research`} />;
-              })}
-            </PanelScroll>
-          ) : null}
-
-          {state.activeTab === "automation" ? (
-            <PanelScroll>
-              {AUTOMATION_NODES.map((node) => {
-                const level = state.automation[node.id] ?? 0;
-                const cost = getAutomationCost(node.id, level);
-                return <ActionCard key={node.id} title={`${node.name}${level ? ` Lv.${level}` : ""}`} desc={node.description} meta={node.branch} enabled={state.researchData >= cost} onClick={() => buyAutomation(node.id)} right={`${formatCompact(cost)} research`} />;
-              })}
-            </PanelScroll>
-          ) : null}
-
-          {state.activeTab === "achievements" ? (
-            <PanelScroll>
-              {ACHIEVEMENTS.map((achievement) => (
-                <div key={achievement.id} style={state.achievements[achievement.id] ? styles.achievementUnlocked : styles.achievementCard}>
-                  <div style={styles.cardTitle}>{achievement.name}</div>
-                  <div style={styles.cardMeta}>{achievement.description}</div>
-                </div>
-              ))}
-            </PanelScroll>
-          ) : null}
-
-          {state.activeTab === "prestige" ? (
-            <PanelScroll>
-              <div style={styles.sectionCopy}>Prestige converts total earned energy into cosmic essence and resets the active run.</div>
-              <ActionCard title="Stellar Rebirth" desc={`Gain ${getPrestigeEssenceGain(state.totalEarned)} cosmic essence.`} meta={state.totalEarned >= BALANCE.prestigeThreshold ? "Available" : `Need ${formatCompact(BALANCE.prestigeThreshold)} total earned`} enabled={state.totalEarned >= BALANCE.prestigeThreshold} onClick={() => setShowPrestigeConfirm(true)} />
-              {PRESTIGE_UPGRADES.map((upgrade) => {
-                const level = state.prestigeUpgrades[upgrade.id] ?? 0;
-                const cost = getPrestigeUpgradeCost(upgrade.id, level);
-                return <ActionCard key={upgrade.id} title={`${upgrade.name}${level ? ` Lv.${level}` : ""}`} desc={upgrade.description} meta={upgrade.branch} enabled={state.cosmicEssence >= cost} onClick={() => useGameStore.getState().buyPrestigeUpgrade(upgrade.id)} right={`${cost} essence`} />;
-              })}
-              <div style={{ ...styles.sectionCopy, marginTop: 8 }}>Star class: {getStarClass(state.starClassId).name}</div>
-              {STAR_CLASSES.map((starClass) => (
-                <ActionCard key={starClass.id} title={starClass.name} desc={starClass.description} meta={starClass.branch} enabled={state.rebirthCount >= starClass.unlockRebirths} onClick={() => useGameStore.getState().setStarClass(starClass.id)} right={state.starClassId === starClass.id ? "Selected" : undefined} />
-              ))}
-            </PanelScroll>
-          ) : null}
-
-          {state.activeTab === "stats" ? (
-            <PanelScroll>
-              <StatRow label="Energy" value={formatNumber(state.energy, state.settings.numberFormat)} />
-              <StatRow label="Total Earned" value={formatNumber(state.totalEarned, state.settings.numberFormat)} />
-              <StatRow label="Biomass" value={formatNumber(state.biomass, state.settings.numberFormat)} />
-              <StatRow label="Research" value={formatNumber(state.researchData, state.settings.numberFormat)} />
-              <StatRow label="Population" value={formatNumber(state.population, state.settings.numberFormat)} />
-              <StatRow label="Cosmic Essence" value={formatNumber(state.cosmicEssence, state.settings.numberFormat)} />
-              <StatRow label="Playtime" value={formatDuration(state.stats.playTimeMs)} />
-              <StatRow label="Rebirths" value={String(state.rebirthCount)} />
-            </PanelScroll>
-          ) : null}
-        </aside>
+        </div>
+        <div className="right-panel hidden md:block">
+          <div className="section-title">{activeTabLabel}</div>
+          <PanelContents
+            state={state}
+            selectedPlanet={selectedPlanet}
+            onBuyUpgrade={buyUpgrade}
+            onBuyResearch={buyResearch}
+            onBuyAutomation={buyAutomation}
+            onBuyPlanet={buyPlanet}
+            onEvolvePlanet={evolvePlanet}
+            onSpecializePlanet={specializePlanet}
+            onOpenPlanetPicker={() => setShowPlanetPicker(true)}
+            onOpenPrestigeConfirm={() => setShowPrestigeConfirm(true)}
+          />
+        </div>
       </div>
 
+      <BottomNavigation layoutMode={layoutMode} activeTab={state.activeTab} onSelectTab={(tab) => useGameStore.getState().setActiveTab(tab)} />
+
+      {isMobile && state.activeTab !== "system" ? <Overlay layoutMode={layoutMode} title={activeTabLabel} onClose={() => useGameStore.getState().setActiveTab("system")}>
+        <PanelContents
+          state={state}
+          selectedPlanet={selectedPlanet}
+          onBuyUpgrade={buyUpgrade}
+          onBuyResearch={buyResearch}
+          onBuyAutomation={buyAutomation}
+          onBuyPlanet={buyPlanet}
+          onEvolvePlanet={evolvePlanet}
+          onSpecializePlanet={specializePlanet}
+          onOpenPlanetPicker={() => setShowPlanetPicker(true)}
+          onOpenPrestigeConfirm={() => setShowPrestigeConfirm(true)}
+        />
+      </Overlay> : null}
+
       {showPlanetPicker ? (
-        <Overlay title="Choose planet type" onClose={() => setShowPlanetPicker(false)}>
+        <Overlay layoutMode={layoutMode} title="Choose planet type" onClose={() => setShowPlanetPicker(false)}>
           <div style={styles.optionGrid}>
             {PLANET_TYPES.map((planetType) => {
               const cost = getPlanetCost(state.planets.length, planetType.id);
@@ -410,7 +356,7 @@ function GameScreen({
       ) : null}
 
       {showSettings ? (
-        <Overlay title="Settings and save management" onClose={() => setShowSettings(false)}>
+        <Overlay layoutMode={layoutMode} title="Settings and save management" onClose={() => setShowSettings(false)}>
           <div style={styles.settingsGrid}>
             <label style={styles.settingRow}><span>Muted</span><input type="checkbox" checked={state.settings.muted} onChange={(event) => useGameStore.getState().updateSettings({ muted: event.target.checked })} /></label>
             <label style={styles.settingRow}><span>Reduced motion</span><input type="checkbox" checked={state.settings.reducedMotion} onChange={(event) => useGameStore.getState().updateSettings({ reducedMotion: event.target.checked })} /></label>
@@ -429,7 +375,7 @@ function GameScreen({
       ) : null}
 
       {showPrestigeConfirm ? (
-        <Overlay title="Confirm Stellar Rebirth" onClose={() => setShowPrestigeConfirm(false)}>
+        <Overlay layoutMode={layoutMode} title="Confirm Stellar Rebirth" onClose={() => setShowPrestigeConfirm(false)}>
           <div style={styles.sectionCopy}>You will keep cosmic essence, achievements, settings, and unlocked star classes. Everything else resets to a new starter system.</div>
           <div style={styles.previewGrid}>
             <PreviewStat label="Essence gain" value={String(getPrestigeEssenceGain(state.totalEarned))} />
@@ -540,16 +486,381 @@ function EventCard({ eventId, onChoose }: { eventId: string; onChoose: (choiceId
   );
 }
 
-function Overlay({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+function PanelContents({
+  state,
+  selectedPlanet,
+  onBuyUpgrade,
+  onBuyResearch,
+  onBuyAutomation,
+  onBuyPlanet,
+  onEvolvePlanet,
+  onSpecializePlanet,
+  onOpenPlanetPicker,
+  onOpenPrestigeConfirm,
+}: {
+  state: GameStateData;
+  selectedPlanet: Planet | null;
+  onBuyUpgrade: (id: string) => void;
+  onBuyResearch: (id: string) => void;
+  onBuyAutomation: (id: string) => void;
+  onBuyPlanet: (typeId: string) => void;
+  onEvolvePlanet: (planetId: string) => void;
+  onSpecializePlanet: (planetId: string, specializationId: string) => void;
+  onOpenPlanetPicker: () => void;
+  onOpenPrestigeConfirm: () => void;
+}) {
+  const activeTab = state.activeTab;
   return (
-    <div style={styles.overlay}>
-      <div style={styles.overlayPanel}>
-        <div style={styles.overlayHeader}>
+    <PanelScroll>
+      {activeTab === "system" ? (
+        <>
+          <div style={styles.sectionCopy}>
+            {selectedPlanet ? `Selected planet: ${selectedPlanet.name}` : `Selected star: ${getStarClass(state.starClassId).name}`}
+          </div>
+          {selectedPlanet ? (
+            <PlanetDetailCard planet={selectedPlanet} state={state} onEvolve={onEvolvePlanet} onSpecialize={onSpecializePlanet} />
+          ) : (
+            <div style={styles.sectionCopy}>The star is the core of the system. Click it for energy and use upgrades to increase its output.</div>
+          )}
+          {UPGRADES.map((upgrade) => {
+            const owned = state.upgrades[upgrade.id] ?? 0;
+            const cost = getUpgradeCost(upgrade.id, owned);
+            const unlocked = state.totalEarned >= (upgrade.unlockTotalEarned ?? 0);
+            return unlocked ? <ActionCard key={upgrade.id} title={upgrade.name} desc={upgrade.description} meta={upgrade.category} enabled={state.energy >= cost} onClick={() => onBuyUpgrade(upgrade.id)} right={`${formatCompact(cost)} energy`} /> : null;
+          })}
+        </>
+      ) : null}
+
+      {activeTab === "planets" ? (
+        <>
+          <ActionCard title="Create planet" desc={`Choose a world type. Cost ${formatCompact(getPlanetCost(state.planets.length))} energy.`} meta={`${state.planets.length}/${BALANCE.maxPlanets} planets`} enabled={state.energy >= getPlanetCost(state.planets.length) && state.planets.length < BALANCE.maxPlanets} onClick={onOpenPlanetPicker} />
+          {state.planets.map((planet) => (
+            <PlanetListCard
+              key={planet.id}
+              planet={planet}
+              state={state}
+              onSelect={() => useGameStore.getState().selectTarget(planet.id)}
+              onEvolve={onEvolvePlanet}
+              onSpecialize={onSpecializePlanet}
+            />
+          ))}
+        </>
+      ) : null}
+
+      {activeTab === "upgrades" ? (
+        <>
+          <div style={styles.sectionCopy}>Upgrade categories improve click power, passive energy, and planetary growth.</div>
+          {UPGRADES.map((upgrade) => {
+            const owned = state.upgrades[upgrade.id] ?? 0;
+            const cost = getUpgradeCost(upgrade.id, owned);
+            const unlocked = state.totalEarned >= (upgrade.unlockTotalEarned ?? 0);
+            return unlocked ? <ActionCard key={upgrade.id} title={upgrade.name} desc={upgrade.description} meta={upgrade.category} enabled={state.energy >= cost} onClick={() => onBuyUpgrade(upgrade.id)} right={`${formatCompact(cost)} energy`} /> : null;
+          })}
+        </>
+      ) : null}
+
+      {activeTab === "research" ? (
+        <>
+          {RESEARCH_NODES.map((node) => {
+            const cost = getResearchCost(node.id, state.research[node.id] ? 1 : 0);
+            const available = node.prerequisites.every((prerequisite) => state.research[prerequisite]);
+            return <ActionCard key={node.id} title={node.name} desc={node.description} meta={`${node.branch} | ${available ? "Available" : "Locked"}`} enabled={available && state.researchData >= cost && !state.research[node.id]} onClick={() => onBuyResearch(node.id)} right={`${formatCompact(cost)} research`} />;
+          })}
+        </>
+      ) : null}
+
+      {activeTab === "automation" ? (
+        <>
+          {AUTOMATION_NODES.map((node) => {
+            const level = state.automation[node.id] ?? 0;
+            const cost = getAutomationCost(node.id, level);
+            return <ActionCard key={node.id} title={`${node.name}${level ? ` Lv.${level}` : ""}`} desc={node.description} meta={node.branch} enabled={state.researchData >= cost} onClick={() => onBuyAutomation(node.id)} right={`${formatCompact(cost)} research`} />;
+          })}
+        </>
+      ) : null}
+
+      {activeTab === "achievements" ? (
+        <>
+          {ACHIEVEMENTS.map((achievement) => (
+            <div key={achievement.id} style={state.achievements[achievement.id] ? styles.achievementUnlocked : styles.achievementCard}>
+              <div style={styles.cardTitle}>{achievement.name}</div>
+              <div style={styles.cardMeta}>{achievement.description}</div>
+            </div>
+          ))}
+        </>
+      ) : null}
+
+      {activeTab === "prestige" ? (
+        <>
+          <div style={styles.sectionCopy}>Prestige converts total earned energy into cosmic essence and resets the active run.</div>
+          <ActionCard title="Stellar Rebirth" desc={`Gain ${getPrestigeEssenceGain(state.totalEarned)} cosmic essence.`} meta={state.totalEarned >= BALANCE.prestigeThreshold ? "Available" : `Need ${formatCompact(BALANCE.prestigeThreshold)} total earned`} enabled={state.totalEarned >= BALANCE.prestigeThreshold} onClick={onOpenPrestigeConfirm} />
+          {PRESTIGE_UPGRADES.map((upgrade) => {
+            const level = state.prestigeUpgrades[upgrade.id] ?? 0;
+            const cost = getPrestigeUpgradeCost(upgrade.id, level);
+            return <ActionCard key={upgrade.id} title={`${upgrade.name}${level ? ` Lv.${level}` : ""}`} desc={upgrade.description} meta={upgrade.branch} enabled={state.cosmicEssence >= cost} onClick={() => useGameStore.getState().buyPrestigeUpgrade(upgrade.id)} right={`${cost} essence`} />;
+          })}
+          <div style={{ ...styles.sectionCopy, marginTop: 8 }}>Star class: {getStarClass(state.starClassId).name}</div>
+          {STAR_CLASSES.map((starClass) => (
+            <ActionCard key={starClass.id} title={starClass.name} desc={starClass.description} meta={starClass.branch} enabled={state.rebirthCount >= starClass.unlockRebirths} onClick={() => useGameStore.getState().setStarClass(starClass.id)} right={state.starClassId === starClass.id ? "Selected" : undefined} />
+          ))}
+        </>
+      ) : null}
+
+      {activeTab === "stats" ? (
+        <>
+          <StatRow label="Energy" value={formatNumber(state.energy, state.settings.numberFormat)} />
+          <StatRow label="Total Earned" value={formatNumber(state.totalEarned, state.settings.numberFormat)} />
+          <StatRow label="Biomass" value={formatNumber(state.biomass, state.settings.numberFormat)} />
+          <StatRow label="Research" value={formatNumber(state.researchData, state.settings.numberFormat)} />
+          <StatRow label="Population" value={formatNumber(state.population, state.settings.numberFormat)} />
+          <StatRow label="Cosmic Essence" value={formatNumber(state.cosmicEssence, state.settings.numberFormat)} />
+          <StatRow label="Playtime" value={formatDuration(state.stats.playTimeMs)} />
+          <StatRow label="Rebirths" value={String(state.rebirthCount)} />
+        </>
+      ) : null}
+    </PanelScroll>
+  );
+}
+
+function Overlay({ layoutMode, title, children, onClose }: { layoutMode: LayoutMode; title: string; children: ReactNode; onClose: () => void }) {
+  const sheetMode = layoutMode === "mobile";
+  return (
+    <div className={sheetMode ? "fixed inset-x-0 bottom-0 z-50 grid place-items-end bg-black/55 p-2 sm:p-4" : "fixed inset-0 z-50 grid place-items-center bg-black/55 p-3 sm:p-4"}>
+      <div className={sheetMode ? "w-full max-h-[82dvh] overflow-auto rounded-t-3xl border border-white/10 bg-[#08101f]/98 p-4 shadow-[0_-24px_90px_rgba(0,0,0,0.5)]" : "w-full max-w-5xl max-h-[90dvh] overflow-auto rounded-3xl border border-white/10 bg-[#08101f]/98 p-4 shadow-[0_40px_120px_rgba(0,0,0,0.45)] sm:p-5"}>
+        <div className="mb-3 flex items-center justify-between gap-3" style={styles.overlayHeader}>
           <div style={styles.cardTitle}>{title}</div>
           <button style={styles.smallButton} onClick={onClose}>Close</button>
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+function SpaceBackground() {
+  const brightStars = [
+    { left: "18%", top: "12%", size: 5.2, delay: "0s", sharp: true },
+    { left: "34%", top: "18%", size: 3.3, delay: "1.8s", sharp: false },
+    { left: "61%", top: "14%", size: 4.8, delay: "0.9s", sharp: true },
+    { left: "78%", top: "24%", size: 5.8, delay: "2.4s", sharp: true },
+    { left: "14%", top: "52%", size: 4.4, delay: "1.2s", sharp: true },
+    { left: "42%", top: "68%", size: 5.0, delay: "2.1s", sharp: true },
+    { left: "69%", top: "58%", size: 4.2, delay: "0.4s", sharp: true },
+    { left: "86%", top: "74%", size: 3.4, delay: "1.6s", sharp: false },
+  ];
+
+  const anchorStars = [
+    { left: "27%", top: "31%", size: 7.2, delay: "0.6s", glow: "rgba(255,247,214,0.55)" },
+    { left: "73%", top: "47%", size: 8.1, delay: "1.4s", glow: "rgba(168,140,255,0.45)" },
+  ];
+
+  const faintStars = [
+    { left: "3%", top: "6%", size: 0.9, opacity: 0.18 },
+    { left: "4.2%", top: "5.2%", size: 1.0, opacity: 0.2 },
+    { left: "5.6%", top: "7.1%", size: 0.8, opacity: 0.16 },
+    { left: "7%", top: "14%", size: 0.9, opacity: 0.2 },
+    { left: "8.2%", top: "13.1%", size: 1.0, opacity: 0.22 },
+    { left: "9.4%", top: "15.2%", size: 0.8, opacity: 0.17 },
+    { left: "12%", top: "7%", size: 0.9, opacity: 0.2 },
+    { left: "13.3%", top: "8.1%", size: 1.0, opacity: 0.21 },
+    { left: "14.8%", top: "6.4%", size: 0.8, opacity: 0.16 },
+    { left: "15%", top: "20%", size: 1.0, opacity: 0.21 },
+    { left: "16.4%", top: "18.7%", size: 0.9, opacity: 0.19 },
+    { left: "17.7%", top: "21.3%", size: 0.8, opacity: 0.16 },
+    { left: "6%", top: "10%", size: 1.0, opacity: 0.22 },
+    { left: "7.1%", top: "9.1%", size: 0.9, opacity: 0.19 },
+    { left: "8.4%", top: "11.2%", size: 1.1, opacity: 0.23 },
+    { left: "11%", top: "18%", size: 1.1, opacity: 0.24 },
+    { left: "12.1%", top: "17.1%", size: 0.9, opacity: 0.2 },
+    { left: "13.5%", top: "19.2%", size: 0.8, opacity: 0.17 },
+    { left: "16%", top: "28%", size: 1.1, opacity: 0.24 },
+    { left: "22%", top: "9%", size: 1.0, opacity: 0.26 },
+    { left: "29%", top: "14%", size: 1.3, opacity: 0.3 },
+    { left: "37%", top: "11%", size: 1.2, opacity: 0.25 },
+    { left: "45%", top: "24%", size: 1.0, opacity: 0.22 },
+    { left: "53%", top: "9%", size: 1.1, opacity: 0.27 },
+    { left: "60%", top: "28%", size: 1.4, opacity: 0.33 },
+    { left: "66%", top: "13%", size: 1.0, opacity: 0.23 },
+    { left: "71%", top: "22%", size: 1.2, opacity: 0.29 },
+    { left: "79%", top: "11%", size: 1.1, opacity: 0.25 },
+    { left: "87%", top: "18%", size: 1.3, opacity: 0.31 },
+    { left: "94%", top: "27%", size: 1.0, opacity: 0.22 },
+    { left: "8%", top: "44%", size: 1.1, opacity: 0.24 },
+    { left: "16%", top: "61%", size: 1.3, opacity: 0.3 },
+    { left: "24%", top: "47%", size: 1.0, opacity: 0.22 },
+    { left: "33%", top: "58%", size: 1.2, opacity: 0.28 },
+    { left: "41%", top: "49%", size: 1.1, opacity: 0.26 },
+    { left: "48%", top: "61%", size: 1.4, opacity: 0.31 },
+    { left: "57%", top: "47%", size: 1.0, opacity: 0.23 },
+    { left: "63%", top: "59%", size: 1.2, opacity: 0.29 },
+    { left: "72%", top: "45%", size: 1.1, opacity: 0.25 },
+    { left: "81%", top: "61%", size: 1.3, opacity: 0.3 },
+    { left: "90%", top: "49%", size: 1.0, opacity: 0.22 },
+    { left: "24%", top: "44%", size: 0.9, opacity: 0.18 },
+    { left: "25.4%", top: "42.8%", size: 1.0, opacity: 0.2 },
+    { left: "26.7%", top: "45.2%", size: 0.8, opacity: 0.16 },
+    { left: "28.1%", top: "43.6%", size: 0.9, opacity: 0.17 },
+    { left: "31%", top: "46%", size: 1.0, opacity: 0.19 },
+    { left: "32.4%", top: "44.7%", size: 0.8, opacity: 0.15 },
+    { left: "34.1%", top: "46.4%", size: 0.9, opacity: 0.17 },
+    { left: "56%", top: "43%", size: 0.9, opacity: 0.18 },
+    { left: "57.3%", top: "41.8%", size: 1.0, opacity: 0.2 },
+    { left: "58.7%", top: "44.1%", size: 0.8, opacity: 0.16 },
+    { left: "60.2%", top: "42.5%", size: 0.9, opacity: 0.17 },
+    { left: "62.1%", top: "45.3%", size: 1.0, opacity: 0.19 },
+    { left: "64%", top: "43.8%", size: 0.8, opacity: 0.15 },
+    { left: "65.5%", top: "46.1%", size: 0.9, opacity: 0.17 },
+    { left: "10%", top: "82%", size: 1.1, opacity: 0.24 },
+    { left: "18%", top: "88%", size: 1.2, opacity: 0.27 },
+    { left: "26%", top: "80%", size: 1.0, opacity: 0.22 },
+    { left: "35%", top: "86%", size: 1.3, opacity: 0.3 },
+    { left: "43%", top: "79%", size: 1.1, opacity: 0.25 },
+    { left: "51%", top: "87%", size: 1.4, opacity: 0.31 },
+    { left: "59%", top: "80%", size: 1.0, opacity: 0.22 },
+    { left: "67%", top: "88%", size: 1.2, opacity: 0.28 },
+    { left: "76%", top: "81%", size: 1.1, opacity: 0.24 },
+    { left: "84%", top: "87%", size: 1.3, opacity: 0.3 },
+    { left: "93%", top: "79%", size: 1.0, opacity: 0.22 },
+    { left: "88%", top: "90%", size: 1.0, opacity: 0.2 },
+    { left: "89.2%", top: "88.8%", size: 1.1, opacity: 0.22 },
+    { left: "90.7%", top: "91.3%", size: 0.9, opacity: 0.16 },
+    { left: "94%", top: "92%", size: 1.0, opacity: 0.18 },
+    { left: "95.4%", top: "90.7%", size: 0.9, opacity: 0.16 },
+    { left: "96.1%", top: "93.3%", size: 0.8, opacity: 0.14 },
+    { left: "80%", top: "94%", size: 1.0, opacity: 0.2 },
+    { left: "81.4%", top: "92.7%", size: 0.9, opacity: 0.17 },
+    { left: "82.8%", top: "95.1%", size: 0.8, opacity: 0.14 },
+    { left: "72%", top: "91%", size: 0.9, opacity: 0.18 },
+    { left: "73.6%", top: "89.8%", size: 0.8, opacity: 0.15 },
+    { left: "74.9%", top: "92.4%", size: 0.9, opacity: 0.16 },
+  ];
+
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden"
+      aria-hidden="true"
+      style={{
+        backgroundColor: "#05060a",
+        backgroundImage:
+          "radial-gradient(circle at 14% 16%, rgba(255,255,255,0.36) 0 1px, transparent 1.4px), radial-gradient(circle at 20% 22%, rgba(255,255,255,0.22) 0 1px, transparent 1.4px), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.28) 0 1px, transparent 1.4px), radial-gradient(circle at 32% 26%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 38% 20%, rgba(255,255,255,0.2) 0 1px, transparent 1.4px), radial-gradient(circle at 46% 16%, rgba(255,255,255,0.24) 0 1px, transparent 1.4px), radial-gradient(circle at 52% 22%, rgba(255,255,255,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 58% 18%, rgba(255,255,255,0.22) 0 1px, transparent 1.4px), radial-gradient(circle at 66% 24%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 74% 20%, rgba(255,255,255,0.26) 0 1px, transparent 1.4px), radial-gradient(circle at 82% 16%, rgba(255,255,255,0.2) 0 1px, transparent 1.4px), radial-gradient(circle at 88% 22%, rgba(255,255,255,0.22) 0 1px, transparent 1.4px), radial-gradient(circle at 10% 48%, rgba(255,255,255,0.2) 0 1px, transparent 1.4px), radial-gradient(circle at 18% 56%, rgba(255,255,255,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 24% 50%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 34% 62%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 42% 56%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 48% 50%, rgba(255,255,255,0.24) 0 1px, transparent 1.4px), radial-gradient(circle at 56% 60%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 64% 54%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 72% 48%, rgba(255,255,255,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 80% 58%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 90% 50%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 12% 78%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 20% 84%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 28% 76%, rgba(255,255,255,0.2) 0 1px, transparent 1.4px), radial-gradient(circle at 36% 82%, rgba(255,255,255,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 44% 76%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 52% 82%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 60% 76%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 68% 84%, rgba(255,255,255,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 76% 78%, rgba(255,255,255,0.2) 0 1px, transparent 1.4px), radial-gradient(circle at 84% 82%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 92% 76%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 12% 35%, rgba(115,106,174,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 22% 42%, rgba(242,138,91,0.12) 0 1px, transparent 1.4px), radial-gradient(circle at 36% 38%, rgba(115,106,174,0.12) 0 1px, transparent 1.4px), radial-gradient(circle at 52% 36%, rgba(242,138,91,0.1) 0 1px, transparent 1.4px), radial-gradient(circle at 68% 40%, rgba(115,106,174,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 82% 36%, rgba(242,138,91,0.1) 0 1px, transparent 1.4px), radial-gradient(ellipse at 52% 48%, rgba(117,98,212,0.22) 0%, rgba(93,106,214,0.16) 18%, rgba(53,68,155,0.1) 34%, transparent 66%), radial-gradient(ellipse at 56% 56%, rgba(118,88,196,0.16) 0%, rgba(94,110,224,0.1) 22%, transparent 60%), radial-gradient(ellipse at 52% 52%, rgba(255,255,255,0.08) 0%, rgba(164,130,255,0.14) 18%, rgba(108,86,214,0.16) 32%, transparent 60%), linear-gradient(165deg, rgba(5,8,16,0.94) 0%, rgba(11,16,34,0.72) 32%, rgba(7,19,38,0.32) 54%, rgba(5,8,16,0.94) 100%)",
+      }}
+    >
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "linear-gradient(160deg, transparent 0%, rgba(90,72,180,0.08) 32%, rgba(124,102,214,0.14) 46%, rgba(80,98,198,0.09) 56%, transparent 76%), radial-gradient(ellipse at 58% 48%, rgba(132,116,232,0.14) 0%, rgba(78,92,204,0.08) 24%, transparent 52%), radial-gradient(ellipse at 34% 66%, rgba(90,115,220,0.08) 0%, rgba(90,115,220,0.04) 20%, transparent 48%), radial-gradient(ellipse at 66% 22%, rgba(255,255,255,0.12) 0%, transparent 24%), radial-gradient(ellipse at 44% 78%, rgba(255,255,255,0.1) 0%, transparent 22%)",
+          filter: "blur(10px)",
+          opacity: 0.95,
+        }}
+      />
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse at 22% 26%, rgba(119,104,214,0.16) 0%, rgba(119,104,214,0.09) 16%, transparent 38%), radial-gradient(ellipse at 70% 34%, rgba(92,111,218,0.14) 0%, rgba(92,111,218,0.08) 18%, transparent 40%), radial-gradient(ellipse at 54% 62%, rgba(132,116,232,0.1) 0%, rgba(132,116,232,0.06) 16%, transparent 34%)",
+          opacity: 0.85,
+          filter: "blur(14px)",
+          animation: "sg-cloud-drift 120s linear infinite",
+        }}
+      />
+      {brightStars.map((star, index) => (
+        <div
+          key={`bright-star-${index}`}
+          className="absolute rounded-full"
+          style={{
+            left: star.left,
+            top: star.top,
+            width: `${star.size}px`,
+            height: `${star.size}px`,
+            background: star.sharp
+              ? "radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,247,214,0.98) 28%, rgba(255,241,199,0.7) 44%, transparent 100%)"
+              : "radial-gradient(circle, rgba(255,255,255,0.98) 0%, rgba(255,241,199,0.9) 42%, rgba(168,140,255,0.35) 72%, transparent 100%)",
+            boxShadow: star.sharp
+              ? "0 0 12px rgba(255,255,255,0.8), 0 0 22px rgba(255,241,199,0.38)"
+              : "0 0 10px rgba(255,255,255,0.65), 0 0 18px rgba(168,140,255,0.25)",
+            animation: `sg-bright-twinkle ${star.sharp ? "4.2s" : "5.5s"} ease-in-out infinite`,
+            animationDelay: star.delay,
+            filter: star.sharp ? "saturate(1.02)" : "saturate(0.92)",
+          }}
+        />
+      ))}
+      {anchorStars.map((star, index) => (
+        <div
+          key={`anchor-star-${index}`}
+          className="absolute"
+          style={{
+            left: star.left,
+            top: star.top,
+            width: `${star.size}px`,
+            height: `${star.size}px`,
+            transform: "translate(-50%, -50%)",
+            borderRadius: "9999px",
+            background:
+              "radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,251,235,0.98) 20%, rgba(255,241,199,0.72) 36%, transparent 100%)",
+            boxShadow: `0 0 16px ${star.glow}, 0 0 32px ${star.glow.replace("0.55", "0.26").replace("0.45", "0.22")}`,
+            animation: `sg-bright-twinkle 3.8s ease-in-out infinite`,
+            animationDelay: star.delay,
+            filter: "saturate(1.05)",
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              inset: "50% auto auto 50%",
+              width: "18px",
+              height: "18px",
+              transform: "translate(-50%, -50%) rotate(45deg)",
+              pointerEvents: "none",
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: 0,
+                width: "1px",
+                height: "18px",
+                background: "linear-gradient(to bottom, transparent, rgba(255,255,255,0.95), transparent)",
+                transform: "translateX(-50%)",
+              }}
+            />
+            <span
+              style={{
+                position: "absolute",
+                left: 0,
+                top: "50%",
+                width: "18px",
+                height: "1px",
+                background: "linear-gradient(to right, transparent, rgba(255,255,255,0.95), transparent)",
+                transform: "translateY(-50%)",
+              }}
+            />
+          </span>
+        </div>
+      ))}
+      {faintStars.map((star, index) => (
+        <div
+          key={`faint-star-${index}`}
+          className="absolute rounded-full"
+          style={{
+            left: star.left,
+            top: star.top,
+            width: `${star.size}px`,
+            height: `${star.size}px`,
+            background: "rgba(255,255,255,0.9)",
+            boxShadow: "0 0 4px rgba(255,255,255,0.18)",
+            opacity: star.opacity,
+            transform: "translate(-50%, -50%)",
+          }}
+        />
+      ))}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: "radial-gradient(ellipse at center, transparent 34%, rgba(7,19,38,0.56) 66%, rgba(5,8,16,0.92) 100%)",
+        }}
+      />
     </div>
   );
 }
@@ -566,43 +877,78 @@ function SolarSystem({
   onSelectPlanet: (id: string) => void;
 }) {
   const starClass = getStarClass(state.starClassId);
+  const [starPulse, setStarPulse] = useState(false);
+  const [burstSeed, setBurstSeed] = useState(0);
+  const [floatingPoints, setFloatingPoints] = useState<Array<{ id: string; left: number; top: number; value: string }>>([]);
+
+  const handleStarClick = () => {
+    onClickStar();
+    const points = formatCompact(computeProduction(state).clickPower);
+    const pointId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    setStarPulse(true);
+    setBurstSeed((value) => value + 1);
+    setFloatingPoints((current) => [...current, { id: pointId, left: 50 + Math.random() * 10 - 5, top: 50 + Math.random() * 8 - 4, value: `+${points}` }]);
+
+    window.setTimeout(() => setStarPulse(false), 240);
+    window.setTimeout(() => setFloatingPoints((current) => current.filter((point) => point.id !== pointId)), 900);
+  };
   return (
-    <div style={styles.systemStage}>
-      <ImageWithFallback
-        src={spaceFieldBg}
-        alt="Deep space star field"
-        className="absolute inset-0 w-full h-full object-cover"
-        style={{
-          filter: "saturate(0.9) brightness(0.82) contrast(1.02)",
-          opacity: 0.8,
-          transform: "scale(1.08)",
-          transformOrigin: "center center",
-          objectPosition: "center center",
-        }}
-      />
+    <div className="relative min-h-0 overflow-hidden" style={styles.systemStage}>
+      <SpaceBackground />
       <div style={styles.systemBackdrop} />
+      <div style={styles.starAmbientGlow} />
       <div style={styles.starAnchor}>
-        <button style={styles.starButton} onClick={onClickStar} aria-label="Click the star to generate energy">
+        <button style={{ ...styles.starButton, ...(starPulse ? styles.starButtonPulse : {}) }} onClick={handleStarClick} aria-label="Click the star to generate energy">
+          <div key={burstSeed} style={styles.starBloom} />
           <div style={styles.starCore} />
           <div style={styles.starLabel}>{starClass.name}</div>
           <div style={styles.starMeta}>{formatCompact(state.energy)} energy</div>
         </button>
       </div>
+      <div style={styles.starParticlesLayer} aria-hidden="true">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <span key={`${burstSeed}-${index}`} style={{ ...styles.starParticle, ...getParticleStyle(index, burstSeed) }} />
+        ))}
+      </div>
+      {floatingPoints.map((point) => (
+        <div key={point.id} style={{ ...styles.floatingPoints, left: `${point.left}%`, top: `${point.top}%` }}>{point.value}</div>
+      ))}
       {state.planets.map((planet, index) => {
         const type = getPlanetType(planet.typeId);
-        const orbitRadius = 16 + planet.orbitIndex * 10;
-        const angle = planet.angle + index * 27;
-        const x = 50 + Math.cos((angle * Math.PI) / 180) * orbitRadius;
-        const y = 50 + Math.sin((angle * Math.PI) / 180) * orbitRadius * 0.62;
+        const orbitRadius = Math.min(280, 162 + planet.orbitIndex * 34 + index * 22);
+        const orbitDuration = 20 + planet.orbitIndex * 5 + index * 2;
+        const initialDelay = -(planet.angle / 360) * orbitDuration;
         return (
-          <button
+          <div
             key={planet.id}
-            style={{ ...styles.planetDot, left: `${x}%`, top: `${y}%`, background: type.color, boxShadow: selectedPlanet?.id === planet.id ? `0 0 24px ${type.color}` : `0 0 12px ${type.color}66` }}
-            onClick={() => onSelectPlanet(planet.id)}
+            className="orbit-track"
+            style={{
+              width: orbitRadius * 2,
+              height: orbitRadius * 2,
+              marginLeft: -orbitRadius,
+              marginTop: -orbitRadius,
+              animationDuration: `${orbitDuration}s`,
+              animationDelay: `${initialDelay}s`,
+              animationDirection: index % 2 === 0 ? "normal" : "reverse",
+            }}
           >
-            <div style={styles.planetName}>{planet.name}</div>
-            <div style={styles.planetSub}>{getStage(planet.stage).name}</div>
-          </button>
+            <div className="orbit-ring" style={{ width: orbitRadius * 2, height: orbitRadius * 2, opacity: 0.55 }} />
+            <button
+              style={{
+                ...styles.planetDot,
+                left: orbitRadius,
+                top: 0,
+                width: 34 + planet.stage * 2,
+                height: 34 + planet.stage * 2,
+                background: `radial-gradient(circle at 35% 30%, rgba(255,255,255,0.35), ${type.color})`,
+                boxShadow: selectedPlanet?.id === planet.id ? `0 0 24px ${type.color}` : `0 0 12px ${type.color}66`,
+              }}
+              onClick={() => onSelectPlanet(planet.id)}
+            >
+            </button>
+            <div style={{ ...styles.planetName, marginTop: 16 }}>{planet.name}</div>
+          </div>
         );
       })}
       <div style={styles.systemHud}>
@@ -613,31 +959,104 @@ function SolarSystem({
   );
 }
 
+function getParticleStyle(index: number, burstSeed: number): CSSProperties {
+  const angle = (index / 8) * Math.PI * 2;
+  const distance = 28 + (index % 3) * 10;
+  return {
+    left: `calc(50% + ${Math.cos(angle) * distance}px)`,
+    top: `calc(50% + ${Math.sin(angle) * distance}px)`,
+    animationDelay: `${burstSeed * 8 + index * 20}ms`,
+    transform: `translate(-50%, -50%) rotate(${burstSeed * 18 + index * 24}deg)`,
+  };
+}
+
+function BottomNavigation({
+  layoutMode,
+  activeTab,
+  onSelectTab,
+}: {
+  layoutMode: LayoutMode;
+  activeTab: TabId;
+  onSelectTab: (tab: TabId) => void;
+}) {
+  if (layoutMode !== "mobile") {
+    return null;
+  }
+
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#071326]/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl">
+      <div className="grid grid-cols-4 gap-2">
+        {NAV_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => onSelectTab(tab.id)}
+            className={tab.id === activeTab ? "min-h-11 rounded-2xl border border-[#f28a5b]/40 bg-[#f28a5b]/15 px-2 py-2 text-[11px] font-semibold text-[#fff1c7]" : "min-h-11 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-[#d4deee]"}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function Sidebar({
+  tab,
+  setTab,
+  canPrestige,
+}: {
+  tab: TabId;
+  setTab: (tab: TabId) => void;
+  canPrestige: boolean;
+}) {
+  const items: { key: TabId; label: string }[] = [
+    { key: "system", label: "Solar System" },
+    { key: "upgrades", label: "Upgrades" },
+    { key: "achievements", label: "Achievements" },
+    { key: "prestige", label: `Prestige${canPrestige ? " •" : ""}` },
+    { key: "stats", label: "Statistics" },
+    { key: "settings", label: "Settings" },
+  ];
+
+  return (
+    <div className="sidebar">
+      {items.map((item) => (
+        <button key={item.key} className={`nav-btn${tab === item.key ? " active" : ""}`} onClick={() => setTab(item.key)}>
+          <span className="label">{item.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function TopBar({
+  layoutMode,
   state,
   production,
   onOpenSettings,
   onBackToStart,
 }: {
+  layoutMode: LayoutMode;
   state: GameStateData;
   production: ReturnType<typeof computeProduction>;
   onOpenSettings: () => void;
   onBackToStart: () => void;
 }) {
   return (
-    <header style={styles.topBar}>
-      <div>
+    <header className="topbar">
+      <div className="brand">STELLAR GENESIS</div>
+      <div className="flex flex-wrap gap-3">
         <div style={styles.kicker}>Stellar Genesis</div>
         <div style={styles.topBarTitle}>Energy {formatNumber(state.energy, state.settings.numberFormat)}</div>
       </div>
-      <div style={styles.resourceStrip}>
+      <div className="flex flex-wrap gap-2 text-xs text-[#d4deee] sm:gap-3 sm:text-sm" style={styles.resourceStrip}>
         <span>EPS {formatNumber(production.energyPerSecond, state.settings.numberFormat)}</span>
         <span>Biomass {formatNumber(state.biomass, state.settings.numberFormat)}</span>
         <span>Research {formatNumber(state.researchData, state.settings.numberFormat)}</span>
         <span>Population {formatNumber(state.population, state.settings.numberFormat)}</span>
         <span>Essence {formatNumber(state.cosmicEssence, state.settings.numberFormat)}</span>
       </div>
-      <div style={styles.actionRow}>
+      <div className="flex items-center gap-2" style={styles.actionRow}>
         <button style={styles.secondaryButton} onClick={onBackToStart}>Start</button>
         <button style={styles.secondaryButton} onClick={onOpenSettings}>Settings</button>
       </div>
@@ -683,6 +1102,28 @@ function StatRow({ label, value }: { label: string; value: string }) {
     <div style={styles.statRow}>
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function Starfield() {
+  const stars = useMemo(
+    () =>
+      Array.from({ length: 70 }).map((_, index) => ({
+        id: index,
+        top: `${Math.random() * 100}%`,
+        left: `${Math.random() * 100}%`,
+        size: `${Math.random() * 1.6 + 0.6}px`,
+        delay: `${Math.random() * 4}s`,
+      })),
+    [],
+  );
+
+  return (
+    <div className="starfield" aria-hidden="true">
+      {stars.map((star) => (
+        <span key={star.id} style={{ top: star.top, left: star.left, width: star.size, height: star.size, animationDelay: star.delay }} />
+      ))}
     </div>
   );
 }
@@ -767,14 +1208,16 @@ const styles: Record<string, CSSProperties> = {
   settingRow: { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", border: "1px solid rgba(169,199,223,0.1)", background: "rgba(12,28,54,0.4)", borderRadius: 14, padding: 12 },
   textArea: { width: "100%", borderRadius: 16, border: "1px solid rgba(169,199,223,0.15)", background: "rgba(7,19,38,0.5)", color: "#f6f2e8", padding: 12, fontFamily: "JetBrains Mono, monospace", marginBottom: 12 },
   systemStage: { position: "relative", height: "100%", minHeight: 0, background: "radial-gradient(circle at center, rgba(18,39,71,0.35) 0%, rgba(7,19,38,0.92) 55%, rgba(2,5,12,1) 100%)", overflow: "hidden" },
-  systemBackdrop: { position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 20% 30%, rgba(255,255,255,0.45) 0 1px, transparent 1.5px), radial-gradient(circle at 70% 18%, rgba(255,255,255,0.28) 0 1px, transparent 1.5px), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.25) 0 1px, transparent 1.5px)", backgroundSize: "220px 220px", opacity: 0.55 },
+  systemBackdrop: { position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 20% 30%, rgba(255,255,255,0.12) 0 1px, transparent 1.5px), radial-gradient(circle at 70% 18%, rgba(255,255,255,0.1) 0 1px, transparent 1.5px), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.09) 0 1px, transparent 1.5px), radial-gradient(circle at 35% 78%, rgba(242,138,91,0.04) 0 1px, transparent 1.5px), radial-gradient(circle at 62% 56%, rgba(115,106,174,0.04) 0 1px, transparent 1.5px)", backgroundSize: "260px 260px", opacity: 0.18 },
+  starAmbientGlow: { position: "absolute", left: "50%", top: "50%", width: 420, height: 420, transform: "translate(-50%, -50%)", borderRadius: "50%", background: "radial-gradient(circle, rgba(242,138,91,0.05) 0%, rgba(242,138,91,0.03) 22%, rgba(246,218,150,0.02) 36%, transparent 68%)", filter: "blur(12px)", pointerEvents: "none", zIndex: 1 },
   starAnchor: { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 2 },
-  starButton: { width: 180, height: 180, borderRadius: "50%", border: "none", background: "transparent", color: "#fff", display: "grid", placeItems: "center", cursor: "pointer", boxShadow: "none" },
-  starCore: { width: 86, height: 86, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,241,199,1) 35%, rgba(242,138,91,0.9) 60%, transparent 85%)", boxShadow: "0 0 28px rgba(255,241,199,0.8)" },
+  starButton: { width: 82, height: 82, borderRadius: "50%", border: "none", background: "radial-gradient(circle at 40% 38%, #FFF8D6 0%, #FFD97A 30%, #F28A5B 65%, #8B3A1A 100%)", boxShadow: "0 0 18px rgba(242,138,91,0.55), 0 0 44px rgba(242,138,91,0.32), 0 0 88px rgba(255,217,122,0.18)", display: "grid", placeItems: "center", cursor: "pointer", color: "#fff", transition: "transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease" },
+  starButtonPulse: { transform: "scale(0.93)", boxShadow: "0 0 14px rgba(242,138,91,0.5), 0 0 34px rgba(242,138,91,0.26), 0 0 58px rgba(255,217,122,0.12)", filter: "brightness(1.03)" },
+  starCore: { width: 82, height: 82, borderRadius: "50%", background: "radial-gradient(circle at 40% 38%, #FFF8D6 0%, #FFD97A 30%, #F28A5B 65%, #8B3A1A 100%)", boxShadow: "0 0 18px rgba(242,138,91,0.55), 0 0 44px rgba(242,138,91,0.32), 0 0 88px rgba(255,217,122,0.18)" },
   starLabel: { marginTop: 8, fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase" },
   starMeta: { fontSize: 12, color: "#d4deee", marginTop: 4 },
-  planetDot: { position: "absolute", width: 86, height: 86, borderRadius: "50%", border: "none", display: "grid", placeItems: "center", cursor: "pointer", transform: "translate(-50%, -50%)", color: "#f6f2e8", background: "transparent" },
-  planetName: { fontSize: 10, fontWeight: 700, textShadow: "0 1px 2px rgba(0,0,0,0.5)" },
+  planetDot: { position: "absolute", borderRadius: "50%", border: "none", display: "grid", placeItems: "center", cursor: "pointer", transform: "translate(-50%, -50%)", color: "#f6f2e8", background: "transparent" },
+  planetName: { marginTop: 10, fontSize: 14, fontWeight: 700, letterSpacing: "0.04em", textShadow: "0 1px 2px rgba(0,0,0,0.5)", textAlign: "center", whiteSpace: "nowrap" },
   planetSub: { fontSize: 9, color: "rgba(255,255,255,0.86)", textShadow: "0 1px 2px rgba(0,0,0,0.5)" },
   systemHud: { position: "absolute", left: 18, bottom: 18, zIndex: 2, padding: "10px 12px", borderRadius: 16, background: "rgba(7,19,38,0.7)", border: "1px solid rgba(169,199,223,0.12)", color: "#d4deee", fontSize: 12, lineHeight: 1.6 },
   eventCard: { position: "absolute", right: 18, top: 18, zIndex: 3, maxWidth: 320, padding: 14, borderRadius: 18, background: "rgba(18,39,71,0.82)", border: "1px solid rgba(242,138,91,0.25)", boxShadow: "0 20px 80px rgba(0,0,0,0.35)" },
