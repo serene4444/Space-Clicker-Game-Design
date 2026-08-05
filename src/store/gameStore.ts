@@ -11,7 +11,7 @@ import { SPECIALIZATIONS, getSpecialization } from "@/game-data/specializations"
 import { STAGES } from "@/game-data/evolution-stages";
 import { getAutomationCost, getEvolveCost, getPlanetCost, getPrestigeEssenceGain, getPrestigeUpgradeCost, getResearchCost, getSpecializationCost, getUpgradeCost } from "@/utilities/costs";
 import { computeProduction } from "@/utilities/production";
-import type { ActiveEvent, GameSaveEnvelope, GameStateData, GameStats, Modifier, Planet } from "@/types/game";
+import type { ActiveEvent, GameSaveEnvelope, GameStateData, GameStats, Modifier, PersistentEffect, Planet } from "@/types/game";
 
 function starterPlanet(): Planet {
   return { id: "planet-0", name: "Homeworld", typeId: "rocky", stage: 0, orbitIndex: 0, angle: 0, size: 84 };
@@ -56,6 +56,7 @@ function snapshotState(state: GameStateData) {
     rebirthCount: state.rebirthCount,
     stats: { ...state.stats },
     modifiers: state.modifiers.map((modifier) => ({ ...modifier })),
+    persistentEffects: state.persistentEffects.map((effect) => ({ ...effect })),
     currentEvent: state.currentEvent ? { ...state.currentEvent } : null,
     nextEventAt: state.nextEventAt,
   } satisfies GameStateData;
@@ -87,6 +88,7 @@ function createBaseState(): GameStateData {
     rebirthCount: 0,
     stats: starterStats(),
     modifiers: [],
+    persistentEffects: [],
     currentEvent: null,
     nextEventAt: Date.now() + randomEventDelay(),
   };
@@ -259,10 +261,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const nextModifiers = cleanModifiers(state.modifiers);
     const nextEventAt = Date.now() + randomEventDelay();
     const updatedModifiers = choice.modifier ? [...nextModifiers, { id: `${event.id}-${choice.id}-${Date.now()}`, kind: choice.modifier.kind, amount: choice.modifier.amount, expiresAt: Date.now() + choice.modifier.durationMs }] : nextModifiers;
+      const nextPersistentEffects = choice.persistentEffect ? [...state.persistentEffects.filter((effect) => effect.id !== `${event.id}-${choice.id}`), { id: `${event.id}-${choice.id}`, kind: choice.persistentEffect.kind, amount: choice.persistentEffect.amount }] : state.persistentEffects;
     set({
       currentEvent: null,
       nextEventAt,
       modifiers: updatedModifiers,
+        persistentEffects: nextPersistentEffects,
       energy: state.energy + (choice.energyDelta ?? 0),
       minerals: state.minerals + (choice.mineralsDelta ?? 0),
       biomass: state.biomass + (choice.biomassDelta ?? 0),

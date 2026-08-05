@@ -41,6 +41,12 @@ export interface ActiveEvent {
   startedAt: number;
 }
 
+export interface PersistentEffect {
+  id: string;
+  kind: "energy" | "click" | "energyPerSecond" | "biomass" | "research" | "minerals" | "population" | "influence";
+  amount: number;
+}
+
 export interface GameStateData {
   energy: number;
   totalEarned: number;
@@ -66,6 +72,7 @@ export interface GameStateData {
   rebirthCount: number;
   stats: GameStats;
   modifiers: Modifier[];
+  persistentEffects: PersistentEffect[];
   currentEvent: ActiveEvent | null;
   nextEventAt: number;
 }
@@ -196,6 +203,7 @@ export interface EventChoiceDef {
   biomassDelta?: number;
   populationDelta?: number;
   influenceDelta?: number;
+  persistentEffect?: { kind: PersistentEffect["kind"]; amount: number };
   modifier?: { kind: Modifier["kind"]; amount: number; durationMs: number };
 }
 

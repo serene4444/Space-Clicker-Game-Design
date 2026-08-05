@@ -18,6 +18,7 @@ function activeModifierFactor(modifiers: Modifier[], kind: Modifier["kind"]) {
 
 export function computeProduction(state: GameStateData) {
   const starClass = getStarClass(state.starClassId);
+  const persistent = (kind: "energy" | "click" | "energyPerSecond" | "biomass" | "research" | "minerals" | "population" | "influence") => 1 + state.persistentEffects.filter((effect) => effect.kind === kind).reduce((sum, effect) => sum + effect.amount, 0);
   const clickFromUpgrades = UPGRADES.reduce((sum, upgrade) => sum + (upgrade.clickPower ?? 0) * getCount(state.upgrades, upgrade.id), 0);
   const energyFromUpgrades = UPGRADES.reduce((sum, upgrade) => sum + (upgrade.energyPerSecond ?? 0) * getCount(state.upgrades, upgrade.id), 0);
   const biomassFromUpgrades = UPGRADES.reduce((sum, upgrade) => sum + (upgrade.biomassPerSecond ?? 0) * getCount(state.upgrades, upgrade.id), 0);
@@ -50,7 +51,7 @@ export function computeProduction(state: GameStateData) {
     return sum * (upgrade?.automationMultiplier ? Math.pow(upgrade.automationMultiplier, level) : 1);
   }, 1);
 
-  const clickPower = (BALANCE.baseClickPower + clickFromUpgrades) * starClass.clickMultiplier * researchClickMultiplier * prestigeClickMultiplier;
+  const clickPower = (BALANCE.baseClickPower + clickFromUpgrades) * starClass.clickMultiplier * researchClickMultiplier * prestigeClickMultiplier * persistent("click");
 
   const planetTotals = state.planets.reduce(
     (sum, planet) => {
@@ -77,10 +78,10 @@ export function computeProduction(state: GameStateData) {
 
   return {
     clickPower: clickPower * activeModifierFactor(state.modifiers, "click"),
-    energyPerSecond: (energyFromUpgrades + planetTotals.energy + automationEnergy) * researchEnergyMultiplier * prestigeEnergyMultiplier * starClass.energyMultiplier * activeModifierFactor(state.modifiers, "energy"),
-    biomassPerSecond: (biomassFromUpgrades + planetTotals.biomass + automationBiomass) * researchBiomassMultiplier * prestigeBiomassMultiplier * activeModifierFactor(state.modifiers, "biomass"),
-    researchPerSecond: (researchFromUpgrades + planetTotals.research + automationResearch) * researchResearchMultiplier * prestigeResearchMultiplier * activeModifierFactor(state.modifiers, "research"),
-    mineralsPerSecond: (planetTotals.minerals + automationMinerals) * activeModifierFactor(state.modifiers, "minerals"),
-    populationPerSecond: (planetTotals.population + automationPopulation) * activeModifierFactor(state.modifiers, "population"),
+    energyPerSecond: (energyFromUpgrades + planetTotals.energy + automationEnergy) * researchEnergyMultiplier * prestigeEnergyMultiplier * starClass.energyMultiplier * persistent("energyPerSecond") * activeModifierFactor(state.modifiers, "energy"),
+    biomassPerSecond: (biomassFromUpgrades + planetTotals.biomass + automationBiomass) * researchBiomassMultiplier * prestigeBiomassMultiplier * persistent("biomass") * activeModifierFactor(state.modifiers, "biomass"),
+    researchPerSecond: (researchFromUpgrades + planetTotals.research + automationResearch) * researchResearchMultiplier * prestigeResearchMultiplier * persistent("research") * activeModifierFactor(state.modifiers, "research"),
+    mineralsPerSecond: (planetTotals.minerals + automationMinerals) * persistent("minerals") * activeModifierFactor(state.modifiers, "minerals"),
+    populationPerSecond: (planetTotals.population + automationPopulation) * persistent("population") * activeModifierFactor(state.modifiers, "population"),
   };
 }

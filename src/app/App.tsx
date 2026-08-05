@@ -479,11 +479,27 @@ function EventCard({ eventId, onChoose }: { eventId: string; onChoose: (choiceId
       <div style={styles.cardMeta}>{event.description}</div>
       <div style={styles.actionRow}>
         {event.choices.map((choice) => (
-          <button key={choice.id} style={styles.smallButton} onClick={() => onChoose(choice.id)}>{choice.label}</button>
+          <button key={choice.id} style={styles.eventChoiceButton} onClick={() => onChoose(choice.id)}>
+            <div style={styles.eventChoiceTitle}>{choice.label}</div>
+            <div style={styles.eventChoiceMeta}>{getEventChoiceSummary(choice)}</div>
+          </button>
         ))}
       </div>
     </div>
   );
+}
+
+function getEventChoiceSummary(choice: { energyDelta?: number; researchDelta?: number; mineralsDelta?: number; biomassDelta?: number; populationDelta?: number; influenceDelta?: number; persistentEffect?: { kind: string; amount: number }; modifier?: { kind: string; amount: number; durationMs: number } }) {
+  const parts: string[] = [];
+  if (choice.energyDelta) parts.push(`${choice.energyDelta > 0 ? "+" : ""}${formatCompact(choice.energyDelta)} energy`);
+  if (choice.researchDelta) parts.push(`${choice.researchDelta > 0 ? "+" : ""}${formatCompact(choice.researchDelta)} research`);
+  if (choice.mineralsDelta) parts.push(`${choice.mineralsDelta > 0 ? "+" : ""}${formatCompact(choice.mineralsDelta)} minerals`);
+  if (choice.biomassDelta) parts.push(`${choice.biomassDelta > 0 ? "+" : ""}${formatCompact(choice.biomassDelta)} biomass`);
+  if (choice.populationDelta) parts.push(`${choice.populationDelta > 0 ? "+" : ""}${formatCompact(choice.populationDelta)} population`);
+  if (choice.influenceDelta) parts.push(`${choice.influenceDelta > 0 ? "+" : ""}${formatCompact(choice.influenceDelta)} influence`);
+  if (choice.persistentEffect) parts.push(`Permanent ${choice.persistentEffect.kind} ${choice.persistentEffect.amount > 0 ? "+" : ""}${Math.round(choice.persistentEffect.amount * 100)}%`);
+  if (choice.modifier) parts.push(`Temporary ${choice.modifier.kind} ${choice.modifier.amount > 0 ? "+" : ""}${Math.round(choice.modifier.amount * 100)}%`);
+  return parts.length ? parts.join(" • ") : "No immediate effect";
 }
 
 function PanelContents({
@@ -1596,6 +1612,9 @@ const styles: Record<string, CSSProperties> = {
   planetSub: { fontSize: 9, color: "rgba(255,255,255,0.86)", textShadow: "0 1px 2px rgba(0,0,0,0.5)" },
   systemHud: { position: "absolute", left: 18, bottom: 18, zIndex: 2, padding: "10px 12px", borderRadius: 16, background: "rgba(7,19,38,0.7)", border: "1px solid rgba(169,199,223,0.12)", color: "#d4deee", fontSize: 12, lineHeight: 1.6 },
   eventCard: { position: "absolute", right: 18, top: 18, zIndex: 3, maxWidth: 320, padding: 14, borderRadius: 18, background: "rgba(18,39,71,0.82)", border: "1px solid rgba(242,138,91,0.25)", boxShadow: "0 20px 80px rgba(0,0,0,0.35)" },
+  eventChoiceButton: { textAlign: "left", padding: 12, borderRadius: 14, border: "1px solid rgba(169,199,223,0.12)", background: "rgba(7,19,38,0.46)", color: "#f6f2e8", cursor: "pointer", flex: "1 1 135px" },
+  eventChoiceTitle: { fontSize: 13, fontWeight: 700, marginBottom: 4 },
+  eventChoiceMeta: { fontSize: 10, lineHeight: 1.45, color: "#9eacc1" },
   overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.58)", display: "grid", placeItems: "center", zIndex: 10, padding: 16 },
   overlayPanel: { width: "min(960px, calc(100vw - 24px))", maxHeight: "min(90vh, 900px)", overflow: "auto", borderRadius: 24, background: "rgba(8,16,31,0.94)", border: "1px solid rgba(169,199,223,0.12)", boxShadow: "0 40px 120px rgba(0,0,0,0.45)", padding: 18 },
   overlayHeader: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12 },
