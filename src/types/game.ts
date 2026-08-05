@@ -26,6 +26,7 @@ export interface Planet {
   orbitIndex: number;
   angle: number;
   size: number;
+  population: number;
   specializationId?: string;
 }
 
@@ -45,6 +46,15 @@ export interface PersistentEffect {
   id: string;
   kind: "energy" | "click" | "energyPerSecond" | "biomass" | "research" | "minerals" | "population" | "influence";
   amount: number;
+}
+
+export interface ColonyRoute {
+  id: string;
+  fromPlanetId: string;
+  toPlanetId: string;
+  population: number;
+  startedAt: number;
+  arrivalAt: number;
 }
 
 export interface GameStateData {
@@ -73,6 +83,7 @@ export interface GameStateData {
   stats: GameStats;
   modifiers: Modifier[];
   persistentEffects: PersistentEffect[];
+  colonyRoutes: ColonyRoute[];
   currentEvent: ActiveEvent | null;
   nextEventAt: number;
 }

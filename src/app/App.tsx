@@ -17,6 +17,7 @@ import { useGameStore } from "@/store/gameStore";
 import { computeProduction } from "@/utilities/production";
 import { formatCompact, formatNumber } from "@/utilities/format";
 import { getAutomationCost, getEvolveCost, getPlanetCost, getPrestigeEssenceGain, getPrestigeUpgradeCost, getResearchCost, getSpecializationCost, getUpgradeCost } from "@/utilities/costs";
+import { getPopulationGrowthBonuses, getPlanetPopulationGrowthRate, getPlanetPopulationCap, getTotalPopulation } from "@/utilities/population";
 import type { GameStateData, Planet, TabId } from "@/types/game";
 import stationBg from "@/imports/download__78_.jpg";
 
@@ -212,10 +213,12 @@ function GameScreen({
   const state = useGameStore();
   const production = useMemo(() => computeProduction(state), [state]);
   const selectedPlanet = state.planets.find((planet) => planet.id === state.selectedTarget) ?? null;
+  const totalPopulation = getTotalPopulation(state.planets);
   const activeTabLabel = NAV_TABS.find((tab) => tab.id === state.activeTab)?.label ?? "System";
   const [showSettings, setShowSettings] = useState(false);
   const [showPlanetPicker, setShowPlanetPicker] = useState(false);
   const [showPrestigeConfirm, setShowPrestigeConfirm] = useState(false);
+  const [colonizeAmount, setColonizeAmount] = useState(2_000_000_000);
   const [saveText, setSaveText] = useState("");
   const isMobile = layoutMode === "mobile";
 
@@ -256,6 +259,15 @@ function GameScreen({
 
   const specializePlanet = (planetId: string, specializationId: string) => {
     const result = useGameStore.getState().specializePlanet(planetId, specializationId);
+    if (!result.ok) toast.error(result.reason);
+  };
+  const colonizePlanet = (planetId: string) => {
+    const target = state.planets.find((planet) => planet.id !== planetId);
+    if (!target) {
+      toast.error("No target planet available");
+      return;
+    }
+    const result = useGameStore.getState().colonizePlanet(planetId, target.id, colonizeAmount);
     if (!result.ok) toast.error(result.reason);
   };
 
@@ -301,6 +313,11 @@ function GameScreen({
             const result = useGameStore.getState().resolveEventChoice(choiceId);
             if (!result.ok) toast.error(result.reason);
           }} /> : null}
+          <div style={styles.systemPopulationHud}>
+            <div style={styles.systemPopulationTitle}>Total Solar System Population</div>
+            <div style={styles.systemPopulationValue}>{formatNumber(totalPopulation, state.settings.numberFormat)}</div>
+            <div style={styles.systemPopulationRate}>+{formatCompact(state.planets.reduce((sum, planet) => sum + getPlanetPopulationGrowthRate(planet) * getPlanetPopulationCap(planet.stage), 0))} / sec</div>
+          </div>
           {offlineSummary ? (
             <Overlay layoutMode={layoutMode} title="Welcome back" onClose={onClearOfflineSummary}>
               <div style={styles.sectionCopy}>Offline progress has been applied.</div>
@@ -397,16 +414,20 @@ function PlanetDetailCard({
   state,
   onEvolve,
   onSpecialize,
+  onColonize,
 }: {
   planet: Planet;
   state: GameStateData;
   onEvolve: (planetId: string) => void;
   onSpecialize: (planetId: string, specializationId: string) => void;
+  onColonize: (planetId: string) => void;
 }) {
   const type = getPlanetType(planet.typeId);
   const stage = getStage(planet.stage);
   const evolveCost = getEvolveCost(planet.stage, planet.orbitIndex);
   const specialization = planet.specializationId ? getSpecialization(planet.specializationId) : null;
+  const growth = getPlanetPopulationGrowthRate(planet);
+  const bonuses = getPlanetPopulationGrowthBonuses(planet.stage);
   return (
     <div style={styles.planetDetailCard}>
       <div style={styles.planetHeader}>
@@ -417,6 +438,9 @@ function PlanetDetailCard({
         <button style={styles.smallButton} onClick={() => onEvolve(planet.id)}>Evolve</button>
       </div>
       <div style={styles.cardMeta}>{stage.description}</div>
+      <div style={styles.cardMeta}>Population: {formatNumber(planet.population, state.settings.numberFormat)}</div>
+      <div style={styles.cardMeta}>Growth: +{formatCompact(growth * getPlanetPopulationCap(planet.stage))}/sec</div>
+      <div style={styles.cardMeta}>Habitability: {Math.round(bonuses.habitability * 100)}%</div>
       <div style={styles.cardMeta}>Evolve cost: {formatCompact(evolveCost)} energy</div>
       <div style={styles.specializationRow}>
         {SPECIALIZATIONS.map((specializationOption) => (
@@ -429,6 +453,7 @@ function PlanetDetailCard({
           </button>
         ))}
       </div>
+      {planet.stage >= 8 ? <button style={styles.smallButton} onClick={() => onColonize(planet.id)}>Colonize Planet</button> : null}
       <div style={styles.cardMeta}>Current specialization: {specialization?.name ?? "None"}</div>
       <div style={styles.cardMeta}>Production bonus: {formatNumber(stage.passiveBonus, state.settings.numberFormat)}</div>
     </div>
@@ -441,12 +466,14 @@ function PlanetListCard({
   onSelect,
   onEvolve,
   onSpecialize,
+  onColonize,
 }: {
   planet: Planet;
   state: GameStateData;
   onSelect: () => void;
   onEvolve: (planetId: string) => void;
   onSpecialize: (planetId: string, specializationId: string) => void;
+  onColonize: (planetId: string) => void;
 }) {
   const type = getPlanetType(planet.typeId);
   const stage = getStage(planet.stage);
@@ -460,6 +487,8 @@ function PlanetListCard({
         <button style={styles.smallButton} onClick={(event) => { event.stopPropagation(); onEvolve(planet.id); }}>Evolve</button>
       </div>
       <div style={styles.cardMeta}>{stage.description}</div>
+      <div style={styles.cardMeta}>Population: {formatNumber(planet.population, state.settings.numberFormat)}</div>
+      <div style={styles.cardMeta}>Growth: +{formatCompact(getPlanetPopulationGrowthRate(planet) * getPlanetPopulationCap(planet.stage))}/sec</div>
       <div style={styles.specializationRow}>
         {SPECIALIZATIONS.map((specialization) => (
           <button key={specialization.id} style={planet.specializationId === specialization.id ? styles.specializationActive : styles.specializationButton} onClick={(event) => { event.stopPropagation(); onSpecialize(planet.id, specialization.id); }}>
@@ -467,6 +496,7 @@ function PlanetListCard({
           </button>
         ))}
       </div>
+      {planet.stage >= 8 ? <button style={styles.smallButton} onClick={(event) => { event.stopPropagation(); onColonize(planet.id); }}>Colonize Planet</button> : null}
     </div>
   );
 }
@@ -579,6 +609,7 @@ function PanelContents({
               onSelect={() => useGameStore.getState().selectTarget(planet.id)}
               onEvolve={onEvolvePlanet}
               onSpecialize={onSpecializePlanet}
+                onColonize={colonizePlanet}
             />
           ))}
         </>
@@ -661,6 +692,7 @@ function PanelContents({
           <StatRow label="Biomass" value={formatNumber(state.biomass, state.settings.numberFormat)} />
           <StatRow label="Research" value={formatNumber(state.researchData, state.settings.numberFormat)} />
           <StatRow label="Population" value={formatNumber(state.population, state.settings.numberFormat)} />
+            <StatRow label="Population Growth" value={`+${formatCompact(state.planets.reduce((sum, planet) => sum + getPlanetPopulationGrowthRate(planet) * getPlanetPopulationCap(planet.stage), 0))}/sec`} />
           <StatRow label="Cosmic Essence" value={formatNumber(state.cosmicEssence, state.settings.numberFormat)} />
           <StatRow label="Playtime" value={formatDuration(state.stats.playTimeMs)} />
           <StatRow label="Rebirths" value={String(state.rebirthCount)} />
@@ -1612,6 +1644,10 @@ const styles: Record<string, CSSProperties> = {
   planetSub: { fontSize: 9, color: "rgba(255,255,255,0.86)", textShadow: "0 1px 2px rgba(0,0,0,0.5)" },
   systemHud: { position: "absolute", left: 18, bottom: 18, zIndex: 2, padding: "10px 12px", borderRadius: 16, background: "rgba(7,19,38,0.7)", border: "1px solid rgba(169,199,223,0.12)", color: "#d4deee", fontSize: 12, lineHeight: 1.6 },
   eventCard: { position: "absolute", right: 18, top: 18, zIndex: 3, maxWidth: 320, padding: 14, borderRadius: 18, background: "rgba(18,39,71,0.82)", border: "1px solid rgba(242,138,91,0.25)", boxShadow: "0 20px 80px rgba(0,0,0,0.35)" },
+    systemPopulationHud: { position: "absolute", left: 18, top: 18, zIndex: 3, minWidth: 180, padding: 12, borderRadius: 16, background: "rgba(7,19,38,0.7)", border: "1px solid rgba(169,199,223,0.12)", boxShadow: "0 16px 60px rgba(0,0,0,0.32)" },
+    systemPopulationTitle: { fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "#9eacc1", marginBottom: 4, fontFamily: "JetBrains Mono, monospace" },
+    systemPopulationValue: { fontSize: 18, fontWeight: 700, color: "#f6f2e8", lineHeight: 1.1 },
+    systemPopulationRate: { fontSize: 11, color: "#d4deee", marginTop: 4 },
   eventChoiceButton: { textAlign: "left", padding: 12, borderRadius: 14, border: "1px solid rgba(169,199,223,0.12)", background: "rgba(7,19,38,0.46)", color: "#f6f2e8", cursor: "pointer", flex: "1 1 135px" },
   eventChoiceTitle: { fontSize: 13, fontWeight: 700, marginBottom: 4 },
   eventChoiceMeta: { fontSize: 10, lineHeight: 1.45, color: "#9eacc1" },

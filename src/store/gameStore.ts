@@ -11,10 +11,11 @@ import { SPECIALIZATIONS, getSpecialization } from "@/game-data/specializations"
 import { STAGES } from "@/game-data/evolution-stages";
 import { getAutomationCost, getEvolveCost, getPlanetCost, getPrestigeEssenceGain, getPrestigeUpgradeCost, getResearchCost, getSpecializationCost, getUpgradeCost } from "@/utilities/costs";
 import { computeProduction } from "@/utilities/production";
-import type { ActiveEvent, GameSaveEnvelope, GameStateData, GameStats, Modifier, PersistentEffect, Planet } from "@/types/game";
+import { getPlanetPopulationCap, getPlanetPopulationGrowthRate, getPopulationMilestone, getTotalPopulation } from "@/utilities/population";
+import type { ActiveEvent, ColonyRoute, GameSaveEnvelope, GameStateData, GameStats, Modifier, PersistentEffect, Planet } from "@/types/game";
 
 function starterPlanet(): Planet {
-  return { id: "planet-0", name: "Homeworld", typeId: "rocky", stage: 0, orbitIndex: 0, angle: 0, size: 84 };
+  return { id: "planet-0", name: "Homeworld", typeId: "rocky", stage: 0, orbitIndex: 0, angle: 0, size: 84, population: 0 };
 }
 
 function starterStats(): GameStats {
@@ -57,6 +58,7 @@ function snapshotState(state: GameStateData) {
     stats: { ...state.stats },
     modifiers: state.modifiers.map((modifier) => ({ ...modifier })),
     persistentEffects: state.persistentEffects.map((effect) => ({ ...effect })),
+    colonyRoutes: state.colonyRoutes.map((route) => ({ ...route })),
     currentEvent: state.currentEvent ? { ...state.currentEvent } : null,
     nextEventAt: state.nextEventAt,
   } satisfies GameStateData;
@@ -89,6 +91,7 @@ function createBaseState(): GameStateData {
     stats: starterStats(),
     modifiers: [],
     persistentEffects: [],
+    colonyRoutes: [],
     currentEvent: null,
     nextEventAt: Date.now() + randomEventDelay(),
   };
@@ -174,6 +177,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       orbitIndex: state.planets.length,
       angle: state.planets.length * 45,
       size: 72 + state.planets.length * 6,
+      population: 0,
     };
     set((draft) => ({
       energy: draft.energy - cost,
@@ -181,6 +185,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
       stats: { ...draft.stats, totalPlanetsPurchased: draft.stats.totalPlanetsPurchased + 1 },
     }));
     syncAchievements(get());
+    return { ok: true };
+  },
+
+  colonizePlanet: (planetId, targetPlanetId, population) => {
+    const state = get();
+    const source = state.planets.find((planet) => planet.id === planetId);
+    const target = state.planets.find((planet) => planet.id === targetPlanetId);
+    if (!source || !target) return { ok: false, reason: "Planet not found" };
+    if (source.stage < 8) return { ok: false, reason: "Colonization unlocks at spacefaring civilization" };
+    if (population <= 0) return { ok: false, reason: "Invalid colony size" };
+    const sendAmount = Math.min(population, Math.floor(source.population * 0.35));
+    if (sendAmount <= 0) return { ok: false, reason: "Not enough population to colonize" };
+    const route: ColonyRoute = {
+      id: `colony-${Date.now()}`,
+      fromPlanetId: planetId,
+      toPlanetId: targetPlanetId,
+      population: sendAmount,
+      startedAt: Date.now(),
+      arrivalAt: Date.now() + 45_000,
+    };
+    set((draft) => ({
+      planets: draft.planets.map((planet) => (planet.id === planetId ? { ...planet, population: Math.max(0, planet.population - sendAmount) } : planet)),
+      colonyRoutes: [...draft.colonyRoutes, route],
+    }));
+    toast.success(`Colony ships launched from ${source.name}.`);
     return { ok: true };
   },
 
@@ -195,8 +224,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (state.energy < cost) return { ok: false, reason: "Not enough energy" };
     set((draft) => ({
       energy: draft.energy - cost,
-      planets: draft.planets.map((item) => (item.id === planetId ? { ...item, stage: Math.min(item.stage + 1, STAGES.length - 1) } : item)),
+      planets: draft.planets.map((item) => {
+        if (item.id !== planetId) return item;
+        const nextStageId = Math.min(item.stage + 1, STAGES.length - 1);
+        const nextCap = getPlanetPopulationCap(nextStageId);
+        const nextPopulation = Math.max(item.population, nextCap);
+        return { ...item, stage: nextStageId, population: nextPopulation };
+      }),
     }));
+    const evolvedPlanet = get().planets.find((item) => item.id === planetId);
+    if (evolvedPlanet) {
+      toast.success(`${evolvedPlanet.name} reached ${getPopulationMilestone(evolvedPlanet.stage).population >= 1_000_000 ? "a new population era" : "a new stage"}.`);
+    }
     syncAchievements(get());
     return { ok: true };
   },
@@ -308,6 +347,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const researchGain = production.researchPerSecond * modifierFactor("research") * deltaSeconds;
     const mineralsGain = production.mineralsPerSecond * modifierFactor("minerals") * deltaSeconds;
     const populationGain = production.populationPerSecond * modifierFactor("population") * deltaSeconds;
+    const maturedPlanets = state.planets.map((planet) => {
+      const growthRate = getPlanetPopulationGrowthRate(planet);
+      if (growthRate <= 0) return planet;
+      const cap = getPlanetPopulationCap(planet.stage);
+      const nextPopulation = Math.min(cap, planet.population + cap * growthRate * deltaSeconds);
+      return nextPopulation > planet.population ? { ...planet, population: nextPopulation } : planet;
+    });
+    const now = Date.now();
+    const arrivedRoutes = state.colonyRoutes.filter((route) => route.arrivalAt <= now);
+    const activeRoutes = state.colonyRoutes.filter((route) => route.arrivalAt > now);
+    const planetsWithArrivals = maturedPlanets.map((planet) => {
+      const arrivingPopulation = arrivedRoutes.filter((route) => route.toPlanetId === planet.id).reduce((sum, route) => sum + route.population, 0);
+      return arrivingPopulation > 0 ? { ...planet, population: planet.population + arrivingPopulation } : planet;
+    });
     const nextEvent: ActiveEvent | null = !state.currentEvent && Date.now() >= state.nextEventAt ? { eventId: EVENTS[Math.floor(Math.random() * EVENTS.length)]?.id ?? EVENTS[0].id, startedAt: Date.now() } : state.currentEvent;
     set((draft) => ({
       energy: draft.energy + energyGain,
@@ -315,7 +368,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       biomass: draft.biomass + biomassGain,
       researchData: draft.researchData + researchGain,
       minerals: draft.minerals + mineralsGain,
-      population: draft.population + populationGain,
+      population: getTotalPopulation(planetsWithArrivals) + populationGain,
+      planets: planetsWithArrivals,
+      colonyRoutes: activeRoutes,
       stats: { ...draft.stats, playTimeMs: draft.stats.playTimeMs + deltaSeconds * 1000 },
       modifiers,
       currentEvent: nextEvent,
