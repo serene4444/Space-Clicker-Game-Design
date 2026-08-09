@@ -86,5 +86,13 @@ export function useSaveSystem(enabled: boolean) {
 }
 
 export function hasStoredSave() {
-  return Boolean(localStorage.getItem(BALANCE.saveKey));
+  const raw = localStorage.getItem(BALANCE.saveKey);
+  if (!raw) return false;
+
+  try {
+    const parsed = JSON.parse(decodeBase64(raw)) as GameSaveEnvelope;
+    return Boolean(parsed.state);
+  } catch {
+    return false;
+  }
 }

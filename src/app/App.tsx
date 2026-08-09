@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Toaster, toast } from "sonner";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
+import { Button } from "@/app/components/ui/button";
+import { IntroMusic, type IntroMusicHandle } from "@/app/components/IntroMusic";
 import { BALANCE } from "@/game-data/balance";
 import { ACHIEVEMENTS } from "@/game-data/achievements";
 import { AUTOMATION_NODES } from "@/game-data/automation";
@@ -24,6 +26,7 @@ import stationBg from "@/imports/download__78_.jpg";
 const SPACE_FIELD_URL = "https://images.unsplash.com/photo-1614580378008-5c4d5f0cf4b5?w=3840&h=2160&q=95";
 
 type Screen = "start" | "game";
+type IntroPhase = "idle" | "launch";
 type LayoutMode = "mobile" | "tablet" | "desktop";
 
 const NAV_TABS: { id: TabId; label: string }[] = [
@@ -87,35 +90,65 @@ function useLayoutMode() {
 
 function App() {
   const [screen, setScreen] = useState<Screen>("start");
+  const [introPhase, setIntroPhase] = useState<IntroPhase>("idle");
   const [offlineSummary, setOfflineSummary] = useState<OfflineSummary | null>(null);
   const layoutMode = useLayoutMode();
+  const gameSettings = useGameStore((state) => state.settings);
   const saveSystem = useSaveSystem(screen === "game");
   useGameLoop(screen === "game");
   const preview = useMemo(() => readPreviewSave(), [screen]);
+  const introMusicRef = useRef<IntroMusicHandle>(null);
+  const launchTimerRef = useRef<number | null>(null);
 
-  const beginNewGame = () => {
-    if (hasStoredSave() && !window.confirm("Start a new system and overwrite the current save?")) return;
-    useGameStore.getState().newGame();
-    saveSystem.saveNow();
+  useEffect(() => {
+    return () => {
+      if (launchTimerRef.current !== null) {
+        window.clearTimeout(launchTimerRef.current);
+      }
+    };
+  }, []);
+
+  const beginSimulation = () => {
+    if (introPhase === "launch") return;
+
+    if (launchTimerRef.current !== null) {
+      window.clearTimeout(launchTimerRef.current);
+    }
+
     setOfflineSummary(null);
-    setScreen("game");
+    setIntroPhase("launch");
+    introMusicRef.current?.begin();
+    window.setTimeout(() => introMusicRef.current?.fadeOut(1400), 700);
+    launchTimerRef.current = window.setTimeout(() => {
+      setScreen("game");
+      setIntroPhase("idle");
+      launchTimerRef.current = null;
+    }, 2100);
   };
 
   const continueGame = () => {
     const summary = saveSystem.loadSave();
     if (!summary) return;
+    if (launchTimerRef.current !== null) {
+      window.clearTimeout(launchTimerRef.current);
+      launchTimerRef.current = null;
+    }
+    introMusicRef.current?.fadeOut(500);
     setOfflineSummary(summary);
+    setIntroPhase("idle");
     setScreen("game");
   };
 
   return (
     <>
       <Toaster position={layoutMode === "mobile" ? "top-center" : "top-right"} richColors />
+      {screen !== "game" ? <IntroMusic ref={introMusicRef} muted={gameSettings.muted} volume={gameSettings.musicVolume} /> : null}
       {screen === "start" ? (
         <StartScreen
           continueAvailable={hasStoredSave()}
           preview={preview}
-          onNewGame={beginNewGame}
+          transitioning={introPhase === "launch"}
+          onBeginSimulation={beginSimulation}
           onContinue={continueGame}
         />
       ) : (
@@ -132,50 +165,71 @@ function App() {
 }
 
 function StartScreen({
-  onNewGame,
+  onBeginSimulation,
   onContinue,
   continueAvailable,
   preview,
+  transitioning,
 }: {
-  onNewGame: () => void;
+  onBeginSimulation: () => void;
   onContinue: () => void;
   continueAvailable: boolean;
   preview: GameStateData | null;
+  transitioning: boolean;
 }) {
+  const previewAge = preview ? Date.now() - preview.lastSaveTime : 0;
+  const introStars = [
+    { left: "16%", top: "18%", size: 2.4, delay: "0s" },
+    { left: "26%", top: "22%", size: 3.2, delay: "1.4s" },
+    { left: "71%", top: "18%", size: 2.8, delay: "0.8s" },
+    { left: "79%", top: "28%", size: 2.2, delay: "2.1s" },
+    { left: "60%", top: "60%", size: 3.4, delay: "1.9s" },
+    { left: "20%", top: "66%", size: 2.1, delay: "2.7s" },
+  ];
+
   return (
-    <div style={styles.startRoot}>
+    <div style={{ ...styles.startRoot, ...(transitioning ? styles.startRootLaunching : {}) }}>
       <ImageWithFallback
         src={stationBg}
         alt="Futuristic space observation room with a large window looking out at a planet"
         className="absolute inset-0 w-full h-full object-cover"
         style={{
-          filter: "saturate(0.95) brightness(0.62) contrast(1.03)",
-          transform: "scale(1.04)",
+          filter: transitioning ? "saturate(1.04) brightness(0.9) contrast(1.08)" : "saturate(0.96) brightness(0.66) contrast(1.04)",
+          transform: transitioning ? "scale(1.18) translate3d(0, -2.2%, 0)" : "scale(1.05)",
           transformOrigin: "center center",
           objectPosition: "center center",
+          transition: "transform 2200ms cubic-bezier(0.18, 0.9, 0.2, 1), filter 1400ms ease",
         }}
       />
       <div style={styles.startBackdrop} />
-      <div style={styles.startGlow} />
-      <div style={styles.startStatusLeft}>OBSERVATION SYSTEM ONLINE</div>
-      <div style={styles.startStatusRight}>
+      <div style={styles.startAtmosphere} />
+      <div style={{ ...styles.startGlow, ...(transitioning ? styles.startGlowLaunch : {}) }} />
+      <div style={{ ...styles.startWindowGlow, ...(transitioning ? styles.startWindowGlowLaunch : {}) }} />
+      <div style={{ ...styles.startCloudBand, ...(transitioning ? styles.startCloudBandLaunch : {}) }} />
+      <div style={{ ...styles.startMoon, ...(transitioning ? styles.startMoonLaunch : {}) }} />
+      <div style={styles.startInterfaceSpark} />
+      {introStars.map((star, index) => (
+        <span key={`${star.left}-${star.top}-${index}`} style={{ ...styles.startStar, left: star.left, top: star.top, width: star.size, height: star.size, animationDelay: star.delay }} />
+      ))}
+      <div style={{ ...styles.startStatusLeft, ...(transitioning ? { opacity: 0.28, transform: "translateY(-8px)" } : {}) }}>OBSERVATION SYSTEM ONLINE</div>
+      <div style={{ ...styles.startStatusRight, ...(transitioning ? { opacity: 0.2, transform: "translateY(-10px)" } : {}) }}>
         <div style={styles.statusTitle}>SYSTEM STATUS</div>
         <div style={styles.statusGrid}>
-          <span>LAST SAVE</span><span>{preview ? formatDuration(preview.lastSaveTime ? Date.now() - preview.lastSaveTime : 0) : "—"}</span>
+          <span>LAST SAVE</span><span>{preview ? formatDuration(previewAge) : "—"}</span>
           <span>SYSTEM NAME</span><span>Sol Prime</span>
           <span>PLAYTIME</span><span>{preview ? formatDuration(preview.stats.playTimeMs) : "00:00:00"}</span>
           <span>EVOLUTION</span><span>{preview ? `${Math.min(100, Math.round((preview.rebirthCount / 3) * 100))}%` : "0%"}</span>
         </div>
       </div>
-      <div style={styles.startPanel}>
-        <div style={styles.kicker}>Observation system online</div>
+      <div style={{ ...styles.startPanel, ...(transitioning ? { opacity: 0.3, transform: "translateY(16px) scale(0.98)" } : {}) }}>
+        <div style={styles.kicker}>Observation deck</div>
         <h1 style={styles.title}>Stellar Genesis</h1>
-        <p style={styles.subtitle}>Shape a star system, grow civilizations, and rebirth into stronger star classes.</p>
+        <p style={styles.subtitle}>Shape worlds. Create life. Build a system among the stars.</p>
         <div style={styles.startButtons}>
-          <button style={styles.primaryButton} onClick={onNewGame}>Begin New System</button>
-          <button style={{ ...styles.secondaryButton, opacity: continueAvailable ? 1 : 0.45 }} disabled={!continueAvailable} onClick={onContinue}>
+          <Button variant="outline" style={styles.primaryButton} disabled={transitioning} onClick={onBeginSimulation}>BEGIN SIMULATION</Button>
+          <Button variant="outline" style={{ ...styles.secondaryButton, opacity: continueAvailable ? 1 : 0.45 }} disabled={!continueAvailable || transitioning} onClick={onContinue}>
             Continue Evolution
-          </button>
+          </Button>
         </div>
         <div style={styles.previewGrid}>
           <PreviewStat label="Playtime" value={preview ? formatDuration(preview.stats.playTimeMs) : "00:00:00"} />
@@ -184,6 +238,7 @@ function StartScreen({
           <PreviewStat label="Planets" value={preview ? String(preview.planets.length) : "1"} />
         </div>
       </div>
+      <div style={{ ...styles.startFooterHint, ...(transitioning ? { opacity: 0.16, transform: "translateY(10px)" } : {}) }}>Window feed locked to external observation orbit.</div>
     </div>
   );
 }
@@ -338,6 +393,7 @@ function GameScreen({
             onBuyPlanet={buyPlanet}
             onEvolvePlanet={evolvePlanet}
             onSpecializePlanet={specializePlanet}
+            onColonize={colonizePlanet}
             onOpenPlanetPicker={() => setShowPlanetPicker(true)}
             onOpenPrestigeConfirm={() => setShowPrestigeConfirm(true)}
           />
@@ -356,6 +412,7 @@ function GameScreen({
           onBuyPlanet={buyPlanet}
           onEvolvePlanet={evolvePlanet}
           onSpecializePlanet={specializePlanet}
+          onColonize={colonizePlanet}
           onOpenPlanetPicker={() => setShowPlanetPicker(true)}
           onOpenPrestigeConfirm={() => setShowPrestigeConfirm(true)}
         />
@@ -427,7 +484,7 @@ function PlanetDetailCard({
   const evolveCost = getEvolveCost(planet.stage, planet.orbitIndex);
   const specialization = planet.specializationId ? getSpecialization(planet.specializationId) : null;
   const growth = getPlanetPopulationGrowthRate(planet);
-  const bonuses = getPlanetPopulationGrowthBonuses(planet.stage);
+  const bonuses = getPopulationGrowthBonuses(planet.stage);
   return (
     <div style={styles.planetDetailCard}>
       <div style={styles.planetHeader}>
@@ -541,6 +598,7 @@ function PanelContents({
   onBuyPlanet,
   onEvolvePlanet,
   onSpecializePlanet,
+  onColonize,
   onOpenPlanetPicker,
   onOpenPrestigeConfirm,
 }: {
@@ -552,6 +610,7 @@ function PanelContents({
   onBuyPlanet: (typeId: string) => void;
   onEvolvePlanet: (planetId: string) => void;
   onSpecializePlanet: (planetId: string, specializationId: string) => void;
+  onColonize: (planetId: string) => void;
   onOpenPlanetPicker: () => void;
   onOpenPrestigeConfirm: () => void;
 }) {
@@ -585,7 +644,7 @@ function PanelContents({
             ))}
           </div>
           {selectedPlanet ? (
-            <PlanetDetailCard planet={selectedPlanet} state={state} onEvolve={onEvolvePlanet} onSpecialize={onSpecializePlanet} />
+            <PlanetDetailCard planet={selectedPlanet} state={state} onEvolve={onEvolvePlanet} onSpecialize={onSpecializePlanet} onColonize={onColonize} />
           ) : (
             <div style={styles.sectionCopy}>The star is the core of the system. Click it for energy and use upgrades to increase its output.</div>
           )}
@@ -609,7 +668,7 @@ function PanelContents({
               onSelect={() => useGameStore.getState().selectTarget(planet.id)}
               onEvolve={onEvolvePlanet}
               onSpecialize={onSpecializePlanet}
-                onColonize={colonizePlanet}
+              onColonize={onColonize}
             />
           ))}
         </>
@@ -820,7 +879,7 @@ function SpaceBackground() {
       className="absolute inset-0 overflow-hidden"
       aria-hidden="true"
       style={{
-        backgroundColor: "#05060a",
+        backgroundColor: "#070d1a",
         backgroundImage:
           "radial-gradient(circle at 14% 16%, rgba(255,255,255,0.36) 0 1px, transparent 1.4px), radial-gradient(circle at 20% 22%, rgba(255,255,255,0.22) 0 1px, transparent 1.4px), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.28) 0 1px, transparent 1.4px), radial-gradient(circle at 32% 26%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 38% 20%, rgba(255,255,255,0.2) 0 1px, transparent 1.4px), radial-gradient(circle at 46% 16%, rgba(255,255,255,0.24) 0 1px, transparent 1.4px), radial-gradient(circle at 52% 22%, rgba(255,255,255,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 58% 18%, rgba(255,255,255,0.22) 0 1px, transparent 1.4px), radial-gradient(circle at 66% 24%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 74% 20%, rgba(255,255,255,0.26) 0 1px, transparent 1.4px), radial-gradient(circle at 82% 16%, rgba(255,255,255,0.2) 0 1px, transparent 1.4px), radial-gradient(circle at 88% 22%, rgba(255,255,255,0.22) 0 1px, transparent 1.4px), radial-gradient(circle at 10% 48%, rgba(255,255,255,0.2) 0 1px, transparent 1.4px), radial-gradient(circle at 18% 56%, rgba(255,255,255,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 24% 50%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 34% 62%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 42% 56%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 48% 50%, rgba(255,255,255,0.24) 0 1px, transparent 1.4px), radial-gradient(circle at 56% 60%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 64% 54%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 72% 48%, rgba(255,255,255,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 80% 58%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 90% 50%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 12% 78%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 20% 84%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 28% 76%, rgba(255,255,255,0.2) 0 1px, transparent 1.4px), radial-gradient(circle at 36% 82%, rgba(255,255,255,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 44% 76%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 52% 82%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 60% 76%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 68% 84%, rgba(255,255,255,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 76% 78%, rgba(255,255,255,0.2) 0 1px, transparent 1.4px), radial-gradient(circle at 84% 82%, rgba(255,255,255,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 92% 76%, rgba(255,255,255,0.18) 0 1px, transparent 1.4px), radial-gradient(circle at 12% 35%, rgba(115,106,174,0.16) 0 1px, transparent 1.4px), radial-gradient(circle at 22% 42%, rgba(242,138,91,0.12) 0 1px, transparent 1.4px), radial-gradient(circle at 36% 38%, rgba(115,106,174,0.12) 0 1px, transparent 1.4px), radial-gradient(circle at 52% 36%, rgba(242,138,91,0.1) 0 1px, transparent 1.4px), radial-gradient(circle at 68% 40%, rgba(115,106,174,0.14) 0 1px, transparent 1.4px), radial-gradient(circle at 82% 36%, rgba(242,138,91,0.1) 0 1px, transparent 1.4px), radial-gradient(ellipse at 52% 48%, rgba(117,98,212,0.22) 0%, rgba(93,106,214,0.16) 18%, rgba(53,68,155,0.1) 34%, transparent 66%), radial-gradient(ellipse at 56% 56%, rgba(118,88,196,0.16) 0%, rgba(94,110,224,0.1) 22%, transparent 60%), radial-gradient(ellipse at 52% 52%, rgba(255,255,255,0.08) 0%, rgba(164,130,255,0.14) 18%, rgba(108,86,214,0.16) 32%, transparent 60%), linear-gradient(165deg, rgba(5,8,16,0.94) 0%, rgba(11,16,34,0.72) 32%, rgba(7,19,38,0.32) 54%, rgba(5,8,16,0.94) 100%)",
       }}
@@ -830,8 +889,8 @@ function SpaceBackground() {
         style={{
           background:
             "linear-gradient(160deg, transparent 0%, rgba(90,72,180,0.08) 32%, rgba(124,102,214,0.14) 46%, rgba(80,98,198,0.09) 56%, transparent 76%), radial-gradient(ellipse at 58% 48%, rgba(132,116,232,0.14) 0%, rgba(78,92,204,0.08) 24%, transparent 52%), radial-gradient(ellipse at 34% 66%, rgba(90,115,220,0.08) 0%, rgba(90,115,220,0.04) 20%, transparent 48%), radial-gradient(ellipse at 66% 22%, rgba(255,255,255,0.12) 0%, transparent 24%), radial-gradient(ellipse at 44% 78%, rgba(255,255,255,0.1) 0%, transparent 22%)",
-          filter: "blur(10px)",
-          opacity: 0.95,
+          filter: "blur(6px)",
+          opacity: 0.56,
         }}
       />
       <div
@@ -839,8 +898,8 @@ function SpaceBackground() {
         style={{
           background:
             "radial-gradient(ellipse at 22% 26%, rgba(119,104,214,0.16) 0%, rgba(119,104,214,0.09) 16%, transparent 38%), radial-gradient(ellipse at 70% 34%, rgba(92,111,218,0.14) 0%, rgba(92,111,218,0.08) 18%, transparent 40%), radial-gradient(ellipse at 54% 62%, rgba(132,116,232,0.1) 0%, rgba(132,116,232,0.06) 16%, transparent 34%)",
-          opacity: 0.85,
-          filter: "blur(14px)",
+          opacity: 0.42,
+          filter: "blur(9px)",
           animation: "sg-cloud-drift 120s linear infinite",
         }}
       />
@@ -1014,7 +1073,7 @@ function SolarSystem({
               animationDirection: index % 2 === 0 ? "normal" : "reverse",
             }}
           >
-            <div className="orbit-ring" style={{ width: orbitRadius * 2, height: orbitRadius * 2, opacity: 0.55 }} />
+            <div className="orbit-ring" style={{ width: orbitRadius * 2, height: orbitRadius * 2, opacity: 0.28 }} />
             <div style={{ position: "absolute", left: orbitRadius, top: 0, zIndex: 3, display: "flex", flexDirection: "column", alignItems: "center" }}>
               <button
                 style={{
@@ -1252,10 +1311,10 @@ function getPlanetVisual(planet: Planet, baseColor: string) {
   }) : [];
 
   const baseGradientByStage = [
-    `radial-gradient(circle at ${45 + shiftX * 0.15}% ${34 + shiftY * 0.12}%, rgba(255,223,183,0.96) 0%, rgba(203,126,64,0.95) 16%, rgba(95,68,55,0.98) 42%, rgba(47,33,32,1) 72%, rgba(13,12,14,1) 100%)`,
-    `radial-gradient(circle at ${42 + shiftX * 0.2}% ${35 + shiftY * 0.12}%, rgba(255,246,228,0.95) 0%, rgba(201,181,165,0.97) 18%, rgba(110,110,112,1) 46%, rgba(52,52,56,1) 76%, rgba(16,18,24,1) 100%)`,
-    `radial-gradient(circle at ${40 + shiftX * 0.2}% ${34 + shiftY * 0.14}%, rgba(255,252,248,0.94) 0%, rgba(171,198,223,0.92) 15%, rgba(77,113,144,0.96) 40%, rgba(29,45,68,1) 74%, rgba(7,12,22,1) 100%)`,
-    `radial-gradient(circle at ${40 + shiftX * 0.2}% ${33 + shiftY * 0.14}%, rgba(255,255,255,0.98) 0%, rgba(165,220,255,0.95) 14%, rgba(50,116,184,0.97) 38%, rgba(20,53,102,1) 72%, rgba(6,10,18,1) 100%)`,
+    `radial-gradient(circle at ${45 + shiftX * 0.15}% ${34 + shiftY * 0.12}%, rgba(255,238,208,0.99) 0%, rgba(230,156,92,0.97) 16%, rgba(144,98,74,0.99) 42%, rgba(88,63,55,1) 72%, rgba(50,44,47,1) 100%)`,
+    `radial-gradient(circle at ${42 + shiftX * 0.2}% ${35 + shiftY * 0.12}%, rgba(255,252,244,0.98) 0%, rgba(224,207,192,0.99) 18%, rgba(148,147,147,1) 46%, rgba(92,92,96,1) 76%, rgba(48,52,62,1) 100%)`,
+    `radial-gradient(circle at ${40 + shiftX * 0.2}% ${34 + shiftY * 0.14}%, rgba(255,255,252,0.97) 0%, rgba(202,221,240,0.95) 15%, rgba(112,146,173,0.97) 40%, rgba(60,80,106,1) 74%, rgba(32,44,62,1) 100%)`,
+    `radial-gradient(circle at ${40 + shiftX * 0.2}% ${33 + shiftY * 0.14}%, rgba(255,255,255,1) 0%, rgba(194,234,255,0.97) 14%, rgba(84,144,205,0.98) 38%, rgba(45,82,128,1) 72%, rgba(28,38,54,1) 100%)`,
     `radial-gradient(circle at ${40 + shiftX * 0.2}% ${33 + shiftY * 0.14}%, rgba(255,255,255,0.98) 0%, rgba(176,224,208,0.94) 14%, rgba(57,123,108,0.97) 38%, rgba(18,57,76,1) 72%, rgba(6,11,18,1) 100%)`,
     `radial-gradient(circle at ${40 + shiftX * 0.2}% ${33 + shiftY * 0.14}%, rgba(255,255,255,0.98) 0%, rgba(188,234,179,0.94) 14%, rgba(54,126,73,0.97) 38%, rgba(18,54,44,1) 72%, rgba(5,11,16,1) 100%)`,
     `radial-gradient(circle at ${40 + shiftX * 0.2}% ${33 + shiftY * 0.14}%, rgba(255,255,255,0.98) 0%, rgba(200,240,205,0.94) 13%, rgba(41,108,84,0.97) 38%, rgba(16,44,50,1) 72%, rgba(5,10,15,1) 100%)`,
@@ -1305,8 +1364,8 @@ function getPlanetVisual(planet: Planet, baseColor: string) {
       backgroundImage: `${surfaceLayers}, ${baseGradientByStage[Math.min(stage, baseGradientByStage.length - 1)]}`,
       backgroundSize: `${textureScale}% ${textureScale}%`,
       backgroundPosition: `${46 + shiftX * 0.2}% ${42 + shiftY * 0.2}%`,
-      backgroundBlendMode: "screen, multiply, multiply, multiply, screen, screen, screen, screen, screen, screen, screen, overlay",
-      boxShadow: `inset -${Math.max(10, size * 0.14)}px -${Math.max(12, size * 0.16)}px ${Math.max(16, size * 0.2)}px rgba(0,0,0,0.72), inset ${Math.max(8, size * 0.1)}px ${Math.max(6, size * 0.08)}px ${Math.max(10, size * 0.14)}px rgba(255,255,255,0.12), inset 0 0 0 1px rgba(255,255,255,0.08)`,
+      backgroundBlendMode: "screen, multiply, multiply, multiply, screen, screen, screen, screen, screen, screen, screen",
+      boxShadow: `inset -${Math.max(10, size * 0.14)}px -${Math.max(12, size * 0.16)}px ${Math.max(16, size * 0.2)}px rgba(0,0,0,0.44), inset ${Math.max(8, size * 0.1)}px ${Math.max(6, size * 0.08)}px ${Math.max(10, size * 0.14)}px rgba(255,255,255,0.2), inset 0 0 0 1px rgba(255,255,255,0.16)`,
       transform: "rotate(-12deg)",
       animation: `planet-spin ${20 + planet.stage * 3 + (planet.orbitIndex % 4) * 2}s linear infinite`,
       willChange: "transform",
@@ -1315,7 +1374,7 @@ function getPlanetVisual(planet: Planet, baseColor: string) {
       position: "absolute",
       inset: 0,
       borderRadius: "50%",
-      background: "linear-gradient(100deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.015) 24%, rgba(0,0,0,0.24) 54%, rgba(0,0,0,0.82) 100%)",
+      background: "linear-gradient(100deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.065) 24%, rgba(0,0,0,0.08) 54%, rgba(0,0,0,0.44) 100%)",
       mixBlendMode: "multiply",
       pointerEvents: "none",
     } as CSSProperties,
@@ -1323,16 +1382,16 @@ function getPlanetVisual(planet: Planet, baseColor: string) {
       position: "absolute",
       inset: 0,
       borderRadius: "50%",
-      background: `radial-gradient(circle at 28% 28%, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.12) 12%, transparent 28%), radial-gradient(circle at 64% 28%, ${palette.specular} 0%, transparent 18%)`,
-      opacity: stage >= 3 ? 0.9 : 0.75,
+      background: `radial-gradient(circle at 28% 28%, rgba(255,255,255,0.56) 0%, rgba(255,255,255,0.2) 12%, transparent 30%), radial-gradient(circle at 64% 28%, ${palette.specular} 0%, transparent 18%)`,
+      opacity: stage >= 3 ? 0.96 : 0.85,
       pointerEvents: "none",
     } as CSSProperties,
     features: {
       position: "absolute",
       inset: 0,
       borderRadius: "50%",
-      background: `radial-gradient(circle at ${48 + shiftX * 0.4}% ${58 + shiftY * 0.22}%, rgba(0,0,0,0.46) 0 5%, transparent 6%), radial-gradient(circle at ${28 + shiftX * 0.36}% ${66 + shiftY * 0.18}%, rgba(0,0,0,0.34) 0 3.8%, transparent 5%)`,
-      opacity: stage <= 2 ? 1 : 0.45,
+      background: `radial-gradient(circle at ${48 + shiftX * 0.4}% ${58 + shiftY * 0.22}%, rgba(0,0,0,0.28) 0 5%, transparent 6%), radial-gradient(circle at ${28 + shiftX * 0.36}% ${66 + shiftY * 0.18}%, rgba(0,0,0,0.2) 0 3.8%, transparent 5%)`,
+      opacity: stage <= 2 ? 0.52 : 0.22,
       pointerEvents: "none",
       mixBlendMode: "multiply",
     } as CSSProperties,
@@ -1369,7 +1428,7 @@ function getPlanetVisual(planet: Planet, baseColor: string) {
       position: "absolute",
       inset: -3,
       borderRadius: "50%",
-      boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.03), inset -${Math.max(6, size * 0.08)}px 0 ${Math.max(10, size * 0.12)}px rgba(0,0,0,0.42), inset ${Math.max(5, size * 0.06)}px 0 ${Math.max(8, size * 0.08)}px ${palette.limb}`,
+      boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.2), inset -${Math.max(6, size * 0.08)}px 0 ${Math.max(10, size * 0.12)}px rgba(0,0,0,0.2), inset ${Math.max(5, size * 0.06)}px 0 ${Math.max(8, size * 0.08)}px ${palette.limb}`,
       pointerEvents: "none",
     } as CSSProperties,
   };
@@ -1473,8 +1532,8 @@ function TopBar({
         <span style={styles.resourcePill}>Essence {formatNumber(state.cosmicEssence, state.settings.numberFormat)}</span>
       </div>
       <div className="flex items-center gap-2" style={styles.actionRow}>
-        <button style={styles.secondaryButton} onClick={onBackToStart}>Start</button>
-        <button style={styles.secondaryButton} onClick={onOpenSettings}>Settings</button>
+        <button style={styles.topbarStartButton} onClick={onBackToStart}>Start</button>
+        <button style={styles.topbarSettingsButton} onClick={onOpenSettings}>Settings</button>
       </div>
     </header>
   );
@@ -1531,6 +1590,9 @@ function Starfield() {
         left: `${Math.random() * 100}%`,
         size: `${Math.random() * 1.6 + 0.6}px`,
         delay: `${Math.random() * 4}s`,
+        glow: `${Math.random() * 8 + 4}px`,
+        tone: Math.random() > 0.8 ? "rgba(255,232,184,0.95)" : Math.random() > 0.55 ? "rgba(182,210,255,0.95)" : "rgba(255,255,255,0.96)",
+        alpha: 0.42 + Math.random() * 0.5,
       })),
     [],
   );
@@ -1538,7 +1600,19 @@ function Starfield() {
   return (
     <div className="starfield" aria-hidden="true">
       {stars.map((star) => (
-        <span key={star.id} style={{ top: star.top, left: star.left, width: star.size, height: star.size, animationDelay: star.delay }} />
+        <span
+          key={star.id}
+          style={{
+            top: star.top,
+            left: star.left,
+            width: star.size,
+            height: star.size,
+            animationDelay: star.delay,
+            background: star.tone,
+            opacity: star.alpha,
+            boxShadow: `0 0 ${star.glow} ${star.tone}`,
+          }}
+        />
       ))}
     </div>
   );
@@ -1547,81 +1621,208 @@ function Starfield() {
 const styles: Record<string, CSSProperties> = {
   startRoot: {
     minHeight: "100vh",
-    display: "grid",
-    placeItems: "center",
+    display: "block",
     position: "relative",
     overflow: "hidden",
-    background: "radial-gradient(circle at 50% 30%, rgba(24,45,85,0.15) 0%, rgba(9,19,37,0.68) 40%, rgba(4,7,13,0.92) 100%)",
+    background: "radial-gradient(circle at 50% 28%, rgba(24,45,85,0.16) 0%, rgba(9,19,37,0.68) 40%, rgba(4,7,13,0.92) 100%)",
     color: "#f6f2e8",
     fontFamily: "Inter, sans-serif",
+  },
+  startRootLaunching: {
+    cursor: "none",
   },
   startBackdrop: {
     position: "absolute",
     inset: 0,
-    background: "linear-gradient(160deg, rgba(7,19,38,0.55) 0%, rgba(19,39,71,0.45) 50%, rgba(7,19,38,0.7) 100%)",
+    background: "linear-gradient(160deg, rgba(7,19,38,0.5) 0%, rgba(19,39,71,0.36) 50%, rgba(7,19,38,0.72) 100%)",
+  },
+  startAtmosphere: {
+    position: "absolute",
+    inset: 0,
+    background: "radial-gradient(circle at 52% 40%, rgba(115,106,174,0.14) 0%, rgba(115,106,174,0.06) 18%, transparent 46%), radial-gradient(circle at 50% 54%, rgba(242,138,91,0.06) 0%, transparent 28%)",
+    mixBlendMode: "screen",
+    pointerEvents: "none",
+    animation: "sg-intro-ambient-pulse 14s ease-in-out infinite",
+  },
+  startWindowGlow: {
+    position: "absolute",
+    left: "50%",
+    top: "48%",
+    width: 760,
+    height: 460,
+    transform: "translate(-50%, -50%)",
+    borderRadius: "50%",
+    background: "radial-gradient(ellipse at center, rgba(255,241,199,0.18) 0%, rgba(242,138,91,0.14) 22%, rgba(242,138,91,0.05) 42%, transparent 72%)",
+    filter: "blur(16px)",
+    opacity: 0.86,
+    pointerEvents: "none",
+    animation: "sg-intro-window-breathe 8s ease-in-out infinite",
   },
   startGlow: {
     position: "absolute",
-    width: 700,
-    height: 700,
+    left: "50%",
+    top: "46%",
+    width: 880,
+    height: 880,
+    transform: "translate(-50%, -50%)",
     borderRadius: "50%",
     background: "radial-gradient(circle, rgba(115,106,174,0.25) 0%, rgba(242,138,91,0.12) 25%, transparent 70%)",
-    filter: "blur(20px)",
+    filter: "blur(24px)",
+    opacity: 0.6,
+    pointerEvents: "none",
+    animation: "sg-intro-nebula-drift 22s ease-in-out infinite",
+  },
+  startGlowLaunch: {
+    opacity: 0.95,
+    transform: "translate(-50%, -50%) scale(1.08)",
+  },
+  startCloudBand: {
+    position: "absolute",
+    inset: 0,
+    background: "radial-gradient(ellipse at 46% 48%, rgba(169,199,223,0.2) 0%, rgba(169,199,223,0.08) 18%, transparent 42%), radial-gradient(ellipse at 59% 51%, rgba(115,106,174,0.16) 0%, rgba(115,106,174,0.07) 20%, transparent 44%), radial-gradient(ellipse at 62% 64%, rgba(242,138,91,0.08) 0%, transparent 30%)",
+    filter: "blur(18px)",
+    opacity: 0.78,
+    mixBlendMode: "screen",
+    pointerEvents: "none",
+    animation: "sg-intro-cloud-drift 38s linear infinite",
+  },
+  startCloudBandLaunch: {
+    opacity: 0.98,
+    transform: "translate3d(0, 0, 0) scale(1.02)",
+  },
+  startMoon: {
+    position: "absolute",
+    right: "22%",
+    top: "18%",
+    width: 26,
+    height: 26,
+    borderRadius: "50%",
+    background: "radial-gradient(circle at 35% 35%, rgba(255,255,255,0.92) 0%, rgba(208,223,236,0.86) 34%, rgba(123,136,164,0.9) 70%, rgba(58,69,94,0.92) 100%)",
+    boxShadow: "0 0 14px rgba(208,223,236,0.22)",
+    opacity: 0.55,
+    filter: "blur(0.1px)",
+    pointerEvents: "none",
+    animation: "sg-intro-moon-drift 18s ease-in-out infinite",
+  },
+  startMoonLaunch: {
+    right: "24%",
+    top: "17.4%",
+    transform: "scale(1.04)",
+    opacity: 0.72,
+  },
+  startInterfaceSpark: {
+    position: "absolute",
+    inset: 0,
+    background: "linear-gradient(90deg, transparent 0%, rgba(242,138,91,0.12) 16%, transparent 20%, transparent 80%, rgba(169,199,223,0.08) 86%, transparent 90%), linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.03) 33%, transparent 34%, transparent 66%, rgba(255,255,255,0.03) 67%, transparent 68%)",
+    mixBlendMode: "screen",
+    opacity: 0.35,
+    pointerEvents: "none",
+    animation: "sg-intro-interface-scan 16s linear infinite",
+  },
+  startStar: {
+    position: "absolute",
+    borderRadius: "9999px",
+    background: "radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,241,199,0.92) 38%, transparent 100%)",
+    boxShadow: "0 0 10px rgba(255,255,255,0.45)",
+    opacity: 0.42,
+    transform: "translate(-50%, -50%)",
+    pointerEvents: "none",
+    animation: "sg-intro-star-twinkle 6s ease-in-out infinite",
+  },
+  startWindowGlowLaunch: {
+    opacity: 1,
+    transform: "translate(-50%, -50%) scale(1.08)",
   },
   startPanel: {
-    position: "relative",
+    position: "absolute",
+    left: 28,
+    bottom: 28,
     zIndex: 1,
-    width: "min(720px, calc(100vw - 32px))",
-    padding: 32,
-    borderRadius: 24,
-    border: "1px solid rgba(169,199,223,0.12)",
-    background: "rgba(8,16,31,0.18)",
-    backdropFilter: "blur(2px)",
-    boxShadow: "none",
+    width: "min(540px, calc(100vw - 56px))",
+    padding: 26,
+    borderRadius: 28,
+    border: "1px solid rgba(169,199,223,0.14)",
+    background: "linear-gradient(180deg, rgba(8,16,31,0.58) 0%, rgba(8,16,31,0.28) 100%)",
+    backdropFilter: "blur(8px)",
+    boxShadow: "0 24px 70px rgba(0,0,0,0.16)",
   },
-  kicker: { letterSpacing: "0.24em", fontSize: 10, color: "#9eacc1", textTransform: "uppercase", fontFamily: "JetBrains Mono, monospace" },
-  startButtons: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 24 },
-  primaryButton: { border: "1px solid #f28a5b", background: "rgba(242,138,91,0.12)", color: "#f28a5b", padding: "12px 18px", borderRadius: 4, cursor: "pointer", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "Space Grotesk, sans-serif" },
-  secondaryButton: { border: "1px solid rgba(169,199,223,0.2)", background: "transparent", color: "#9eacc1", padding: "12px 18px", borderRadius: 4, cursor: "pointer", fontFamily: "Inter, sans-serif" },
+  kicker: { letterSpacing: "0.22em", fontSize: 10, color: "#f28a5b", textTransform: "uppercase", fontFamily: "JetBrains Mono, monospace", marginBottom: 8 },
+  title: { fontFamily: "Space Grotesk, sans-serif", fontSize: "clamp(42px, 5vw, 68px)", lineHeight: 0.94, letterSpacing: "0.05em", textTransform: "uppercase", color: "#f6f2e8", textShadow: "0 0 24px rgba(242,138,91,0.12), 0 0 40px rgba(169,199,223,0.08)", margin: 0 },
+  subtitle: { maxWidth: 430, marginTop: 14, marginBottom: 0, color: "#d4deee", fontSize: 15, lineHeight: 1.7 },
+  statusTitle: { fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "#f28a5b", marginBottom: 10, fontFamily: "JetBrains Mono, monospace" },
+  statusGrid: { display: "grid", gridTemplateColumns: "1fr auto", gap: 6, color: "#d4deee", fontSize: 11, lineHeight: 1.45 },
+  startStatusLeft: { position: "absolute", left: 28, top: 24, zIndex: 2, letterSpacing: "0.24em", fontSize: 10, color: "#9eacc1", textTransform: "uppercase", fontFamily: "JetBrains Mono, monospace" },
+  startStatusRight: { position: "absolute", right: 28, top: 24, zIndex: 2, width: "min(280px, calc(100vw - 56px))", padding: 16, borderRadius: 20, border: "1px solid rgba(169,199,223,0.12)", background: "rgba(8,16,31,0.52)", backdropFilter: "blur(10px)", boxShadow: "0 18px 60px rgba(0,0,0,0.14)" },
+  startButtons: { display: "flex", gap: 12, flexWrap: "wrap", marginTop: 22, marginBottom: 16 },
+  primaryButton: { border: "1px solid rgba(242,138,91,0.7)", background: "linear-gradient(180deg, rgba(242,138,91,0.24) 0%, rgba(242,138,91,0.12) 100%)", color: "#fff1c7", padding: "13px 18px", borderRadius: 999, cursor: "pointer", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", fontFamily: "Space Grotesk, sans-serif", boxShadow: "0 0 0 1px rgba(255,241,199,0.04) inset, 0 0 26px rgba(242,138,91,0.14)", minHeight: 48 },
+  secondaryButton: { border: "1px solid rgba(169,199,223,0.24)", background: "rgba(7,19,38,0.34)", color: "#d4deee", padding: "13px 18px", borderRadius: 999, cursor: "pointer", fontFamily: "Inter, sans-serif", minHeight: 48 },
   dangerButton: { border: "1px solid rgba(255,116,116,0.28)", background: "rgba(110,34,34,0.35)", color: "#ffd7d7", padding: "12px 18px", borderRadius: 14, cursor: "pointer" },
-  previewGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 },
-  previewStat: { padding: 14, borderRadius: 16, background: "rgba(12,28,54,0.66)", border: "1px solid rgba(169,199,223,0.1)" },
+  previewGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))", gap: 10, marginTop: 6 },
+  previewStat: { padding: 14, borderRadius: 16, background: "rgba(12,28,54,0.56)", border: "1px solid rgba(169,199,223,0.1)" },
   previewLabel: { fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "#9eacc1", marginBottom: 6 },
   previewValue: { fontSize: 16, color: "#f6f2e8" },
+  startFooterHint: { position: "absolute", right: 28, bottom: 18, zIndex: 2, fontSize: 11, color: "#9eacc1", letterSpacing: "0.06em", opacity: 0.85 },
   gameRoot: { minHeight: "100vh", display: "flex", flexDirection: "column", background: "#071326", color: "#f6f2e8", fontFamily: "Inter, sans-serif" },
   topBar: { display: "flex", gap: 16, alignItems: "center", justifyContent: "space-between", padding: "8px 20px", borderBottom: "1px solid rgba(169,199,223,0.1)", background: "rgba(7,19,38,0.82)", backdropFilter: "blur(12px)", fontFamily: "JetBrains Mono, monospace" },
-  topBarSubtitle: { marginTop: 2, fontSize: 11, lineHeight: 1.25, color: "#d4deee", opacity: 0.84 },
+  topBarSubtitle: { marginTop: 2, fontSize: 11, lineHeight: 1.25, color: "#deebff", opacity: 0.94 },
   topBarTitle: { fontSize: 16, fontWeight: 700, marginTop: 2 },
   energyCapsule: { display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 999, background: "linear-gradient(180deg, rgba(242,138,91,0.15), rgba(7,19,38,0.72))", border: "1px solid rgba(242,138,91,0.26)", boxShadow: "0 0 0 1px rgba(255,241,199,0.03) inset, 0 0 24px rgba(242,138,91,0.12)" },
   energyIcon: { width: 24, height: 24, borderRadius: "50%", display: "grid", placeItems: "center", color: "#fff1c7", background: "radial-gradient(circle, rgba(255,248,214,1) 0%, rgba(255,217,122,0.95) 38%, rgba(242,138,91,0.9) 72%, rgba(139,58,26,0.18) 100%)", boxShadow: "0 0 12px rgba(255,217,122,0.45), 0 0 20px rgba(242,138,91,0.22)", fontSize: 12 },
   energyLabel: { fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: "#9eacc1", fontFamily: "JetBrains Mono, monospace" },
   energyValue: { fontSize: 16, fontWeight: 700, lineHeight: 1.1, color: "#f6f2e8", fontFamily: "Space Grotesk, sans-serif" },
-  resourceStrip: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: "#d4deee", fontSize: 11 },
+  resourceStrip: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: "#e3edff", fontSize: 11 },
   resourcePill: { padding: "6px 9px", borderRadius: 999, border: "1px solid rgba(169,199,223,0.12)", background: "rgba(7,19,38,0.42)", backdropFilter: "blur(8px)" },
   actionRow: { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" },
+  topbarStartButton: {
+    border: "1px solid rgba(255,232,172,0.92)",
+    background: "linear-gradient(180deg, rgba(255,226,136,1) 0%, rgba(246,170,98,0.98) 44%, rgba(229,120,78,0.96) 100%)",
+    color: "#1a2130",
+    padding: "13px 20px",
+    borderRadius: 999,
+    cursor: "pointer",
+    fontFamily: "Space Grotesk, sans-serif",
+    fontWeight: 700,
+    letterSpacing: "0.03em",
+    minHeight: 48,
+    textShadow: "0 1px 0 rgba(255,245,220,0.45)",
+    boxShadow: "0 0 0 1px rgba(255,248,214,0.34) inset, 0 0 20px rgba(246,218,150,0.48), 0 14px 34px rgba(242,138,91,0.48)",
+  },
+  topbarSettingsButton: {
+    border: "1px solid rgba(200,220,246,0.68)",
+    background: "linear-gradient(180deg, rgba(26,50,84,0.9) 0%, rgba(12,29,52,0.92) 100%)",
+    color: "#f3f8ff",
+    padding: "13px 18px",
+    borderRadius: 999,
+    cursor: "pointer",
+    fontFamily: "Inter, sans-serif",
+    fontWeight: 600,
+    minHeight: 48,
+    textShadow: "0 0 8px rgba(208,226,255,0.16)",
+    boxShadow: "0 0 0 1px rgba(255,255,255,0.12) inset, 0 0 18px rgba(124,166,232,0.22), 0 10px 24px rgba(0,0,0,0.34)",
+  },
   mainGrid: { display: "grid", gridTemplateColumns: "56px minmax(0, 1fr) 280px", minHeight: 0, flex: 1 },
   navRail: { display: "flex", flexDirection: "column", gap: 4, paddingTop: 16, alignItems: "center", borderRight: "1px solid rgba(169,199,223,0.08)", background: "rgba(7,19,38,0.58)" },
-  navButton: { border: "1px solid transparent", background: "transparent", color: "#59677d", padding: "8px 4px", borderRadius: 4, cursor: "pointer", textAlign: "center", width: 40, fontSize: 10, fontFamily: "JetBrains Mono, monospace", opacity: 0.35 },
-  navActive: { border: "1px solid rgba(242,138,91,0.35)", background: "rgba(242,138,91,0.12)", color: "#f28a5b", padding: "8px 4px", borderRadius: 4, cursor: "pointer", textAlign: "center", width: 40, fontSize: 10, fontFamily: "JetBrains Mono, monospace", boxShadow: "0 0 10px rgba(242,138,91,0.25)" },
+  navButton: { border: "1px solid transparent", background: "transparent", color: "#c2d3ea", padding: "8px 4px", borderRadius: 4, cursor: "pointer", textAlign: "center", width: 40, fontSize: 10, fontFamily: "JetBrains Mono, monospace", opacity: 0.78 },
+  navActive: { border: "1px solid rgba(242,138,91,0.52)", background: "rgba(242,138,91,0.2)", color: "#fff6da", padding: "8px 4px", borderRadius: 4, cursor: "pointer", textAlign: "center", width: 40, fontSize: 10, fontFamily: "JetBrains Mono, monospace", boxShadow: "0 0 12px rgba(242,138,91,0.34)" },
   centerPanel: { position: "relative", minHeight: 0, overflow: "hidden" },
-  sidePanel: { display: "flex", flexDirection: "column", minHeight: 0, borderLeft: "1px solid rgba(169,199,223,0.08)", background: "rgba(7,19,38,0.74)" },
-  sideHeader: { padding: 16, borderBottom: "1px solid rgba(169,199,223,0.08)", letterSpacing: "0.16em", textTransform: "uppercase", color: "#f28a5b", fontSize: 11, fontFamily: "Space Grotesk, sans-serif" },
+  sidePanel: { display: "flex", flexDirection: "column", minHeight: 0, borderLeft: "1px solid rgba(169,199,223,0.08)", background: "rgba(7,19,38,0.66)" },
+  sideHeader: { padding: 16, borderBottom: "1px solid rgba(169,199,223,0.08)", letterSpacing: "0.16em", textTransform: "uppercase", color: "#ffd7a1", fontSize: 11, fontFamily: "Space Grotesk, sans-serif" },
   panelScroll: { padding: 14, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", minHeight: 0 },
   actionCard: { textAlign: "left", padding: 14, borderRadius: 18, border: "1px solid rgba(242,138,91,0.22)", background: "rgba(18,39,71,0.56)", color: "#f6f2e8", cursor: "pointer" },
   actionCardDisabled: { textAlign: "left", padding: 14, borderRadius: 18, border: "1px solid rgba(169,199,223,0.1)", background: "rgba(12,28,54,0.4)", color: "#9eacc1", opacity: 0.55, cursor: "not-allowed" },
   cardTitle: { fontSize: 15, fontWeight: 700, marginBottom: 6 },
-  cardMeta: { fontSize: 12, color: "#9eacc1", lineHeight: 1.5 },
-  sectionCopy: { color: "#d4deee", fontSize: 13, lineHeight: 1.7, padding: "0 2px" },
+  cardMeta: { fontSize: 12, color: "#c7d7ef", lineHeight: 1.5 },
+  sectionCopy: { color: "#e0e9f8", fontSize: 13, lineHeight: 1.7, padding: "0 2px" },
   subnavRow: { display: "flex", gap: 8, flexWrap: "wrap", margin: "4px 0 10px" },
-  subnavButton: { border: "1px solid rgba(169,199,223,0.12)", background: "rgba(7,19,38,0.34)", color: "#d4deee", padding: "7px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
-  subnavButtonActive: { border: "1px solid rgba(242,138,91,0.35)", background: "rgba(242,138,91,0.16)", color: "#fff1c7", padding: "7px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
+  subnavButton: { border: "1px solid rgba(169,199,223,0.2)", background: "rgba(7,19,38,0.46)", color: "#deebff", padding: "7px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
+  subnavButtonActive: { border: "1px solid rgba(242,138,91,0.44)", background: "rgba(242,138,91,0.22)", color: "#fff6da", padding: "7px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
   planetCard: { border: "1px solid rgba(169,199,223,0.1)", borderRadius: 18, background: "rgba(12,28,54,0.48)", padding: 14, cursor: "pointer" },
   planetCardActive: { border: "1px solid rgba(242,138,91,0.3)", borderRadius: 18, background: "rgba(242,138,91,0.08)", padding: 14, cursor: "pointer" },
   planetDetailCard: { border: "1px solid rgba(169,199,223,0.1)", borderRadius: 18, background: "rgba(12,28,54,0.48)", padding: 14 },
   planetHeader: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" },
   specializationRow: { display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" },
-  specializationButton: { border: "1px solid rgba(169,199,223,0.12)", background: "rgba(7,19,38,0.34)", color: "#d4deee", padding: "6px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
-  specializationActive: { border: "1px solid rgba(242,138,91,0.35)", background: "rgba(242,138,91,0.16)", color: "#fff1c7", padding: "6px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
+  specializationButton: { border: "1px solid rgba(169,199,223,0.2)", background: "rgba(7,19,38,0.46)", color: "#deebff", padding: "6px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
+  specializationActive: { border: "1px solid rgba(242,138,91,0.44)", background: "rgba(242,138,91,0.22)", color: "#fff6da", padding: "6px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
   smallButton: { border: "1px solid rgba(169,199,223,0.16)", background: "rgba(18,39,71,0.6)", color: "#f6f2e8", padding: "7px 11px", borderRadius: 12, cursor: "pointer" },
   achievementCard: { border: "1px solid rgba(169,199,223,0.1)", borderRadius: 18, background: "rgba(12,28,54,0.42)", padding: 14 },
   achievementUnlocked: { border: "1px solid rgba(110,169,139,0.3)", borderRadius: 18, background: "rgba(110,169,139,0.08)", padding: 14 },
@@ -1630,22 +1831,22 @@ const styles: Record<string, CSSProperties> = {
   settingsGrid: { display: "grid", gap: 10, marginBottom: 14 },
   settingRow: { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", border: "1px solid rgba(169,199,223,0.1)", background: "rgba(12,28,54,0.4)", borderRadius: 14, padding: 12 },
   textArea: { width: "100%", borderRadius: 16, border: "1px solid rgba(169,199,223,0.15)", background: "rgba(7,19,38,0.5)", color: "#f6f2e8", padding: 12, fontFamily: "JetBrains Mono, monospace", marginBottom: 12 },
-  systemStage: { position: "relative", height: "100%", minHeight: 0, background: "radial-gradient(circle at center, rgba(18,39,71,0.35) 0%, rgba(7,19,38,0.92) 55%, rgba(2,5,12,1) 100%)", overflow: "hidden" },
-  systemBackdrop: { position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 20% 30%, rgba(255,255,255,0.12) 0 1px, transparent 1.5px), radial-gradient(circle at 70% 18%, rgba(255,255,255,0.1) 0 1px, transparent 1.5px), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.09) 0 1px, transparent 1.5px), radial-gradient(circle at 35% 78%, rgba(242,138,91,0.04) 0 1px, transparent 1.5px), radial-gradient(circle at 62% 56%, rgba(115,106,174,0.04) 0 1px, transparent 1.5px)", backgroundSize: "260px 260px", opacity: 0.18 },
-  starAmbientGlow: { position: "absolute", left: "50%", top: "50%", width: 420, height: 420, transform: "translate(-50%, -50%)", borderRadius: "50%", background: "radial-gradient(circle, rgba(242,138,91,0.05) 0%, rgba(242,138,91,0.03) 22%, rgba(246,218,150,0.02) 36%, transparent 68%)", filter: "blur(12px)", pointerEvents: "none", zIndex: 1 },
+  systemStage: { position: "relative", height: "100%", minHeight: 0, background: "radial-gradient(circle at center, rgba(24,48,84,0.72) 0%, rgba(10,24,46,0.64) 55%, rgba(4,10,22,0.84) 100%)", overflow: "hidden" },
+  systemBackdrop: { position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 20% 30%, rgba(255,255,255,0.1) 0 1px, transparent 1.5px), radial-gradient(circle at 70% 18%, rgba(194,218,255,0.09) 0 1px, transparent 1.5px), radial-gradient(circle at 80% 70%, rgba(255,237,200,0.08) 0 1px, transparent 1.5px), radial-gradient(circle at 35% 78%, rgba(242,138,91,0.03) 0 1px, transparent 1.5px), radial-gradient(circle at 62% 56%, rgba(115,106,174,0.03) 0 1px, transparent 1.5px)", backgroundSize: "260px 260px", opacity: 0.2 },
+  starAmbientGlow: { position: "absolute", left: "50%", top: "50%", width: 640, height: 640, transform: "translate(-50%, -50%)", borderRadius: "50%", background: "radial-gradient(circle, rgba(246,218,150,0.26) 0%, rgba(242,138,91,0.15) 24%, rgba(246,218,150,0.06) 42%, transparent 70%)", filter: "blur(18px)", pointerEvents: "none", zIndex: 1 },
   starAnchor: { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 2 },
-  starButton: { width: 82, height: 82, borderRadius: "50%", border: "none", background: "radial-gradient(circle at 40% 38%, #FFF8D6 0%, #FFD97A 30%, #F28A5B 65%, #8B3A1A 100%)", boxShadow: "0 0 18px rgba(242,138,91,0.55), 0 0 44px rgba(242,138,91,0.32), 0 0 88px rgba(255,217,122,0.18)", display: "grid", placeItems: "center", cursor: "pointer", color: "#fff", transition: "transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease" },
-  starButtonPulse: { transform: "scale(0.93)", boxShadow: "0 0 14px rgba(242,138,91,0.5), 0 0 34px rgba(242,138,91,0.26), 0 0 58px rgba(255,217,122,0.12)", filter: "brightness(1.03)" },
-  starCore: { width: 82, height: 82, borderRadius: "50%", background: "radial-gradient(circle at 40% 38%, #FFF8D6 0%, #FFD97A 30%, #F28A5B 65%, #8B3A1A 100%)", boxShadow: "0 0 18px rgba(242,138,91,0.55), 0 0 44px rgba(242,138,91,0.32), 0 0 88px rgba(255,217,122,0.18)" },
+  starButton: { width: 82, height: 82, borderRadius: "50%", border: "none", background: "radial-gradient(circle at 40% 38%, #FFF8D6 0%, #F6DA96 28%, #F28A5B 62%, #8B3A1A 100%)", boxShadow: "0 0 24px rgba(246,218,150,0.68), 0 0 56px rgba(242,138,91,0.42), 0 0 104px rgba(246,218,150,0.3)", display: "grid", placeItems: "center", cursor: "pointer", color: "#fff", transition: "transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease" },
+  starButtonPulse: { transform: "scale(0.93)", boxShadow: "0 0 20px rgba(246,218,150,0.7), 0 0 46px rgba(242,138,91,0.4), 0 0 84px rgba(246,218,150,0.28)", filter: "brightness(1.08)" },
+  starCore: { width: 82, height: 82, borderRadius: "50%", background: "radial-gradient(circle at 40% 38%, #FFF8D6 0%, #F6DA96 28%, #F28A5B 62%, #8B3A1A 100%)", boxShadow: "0 0 24px rgba(246,218,150,0.68), 0 0 56px rgba(242,138,91,0.42), 0 0 104px rgba(246,218,150,0.3)" },
   starLabel: { marginTop: 8, fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase" },
   starMeta: { fontSize: 12, color: "#d4deee", marginTop: 4 },
   planetDot: { position: "absolute", borderRadius: "50%", border: "none", display: "grid", placeItems: "center", cursor: "pointer", transform: "translate(-50%, -50%)", color: "#f6f2e8", background: "transparent" },
-  planetName: { marginTop: 20, fontSize: 11, fontWeight: 700, letterSpacing: "0.03em", textShadow: "0 1px 2px rgba(0,0,0,0.5)", textAlign: "center", whiteSpace: "nowrap" },
-  planetSub: { fontSize: 9, color: "rgba(255,255,255,0.86)", textShadow: "0 1px 2px rgba(0,0,0,0.5)" },
-  systemHud: { position: "absolute", left: 18, bottom: 18, zIndex: 2, padding: "10px 12px", borderRadius: 16, background: "rgba(7,19,38,0.7)", border: "1px solid rgba(169,199,223,0.12)", color: "#d4deee", fontSize: 12, lineHeight: 1.6 },
+  planetName: { marginTop: 20, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", color: "#f8fbff", textShadow: "0 1px 2px rgba(0,0,0,0.5), 0 0 12px rgba(255,255,255,0.32)", textAlign: "center", whiteSpace: "nowrap" },
+  planetSub: { fontSize: 9, color: "rgba(250,253,255,1)", textShadow: "0 1px 2px rgba(0,0,0,0.48), 0 0 10px rgba(255,255,255,0.26)" },
+  systemHud: { position: "absolute", left: 18, bottom: 18, zIndex: 2, padding: "10px 12px", borderRadius: 16, background: "rgba(7,19,38,0.7)", border: "1px solid rgba(169,199,223,0.12)", color: "#d4deee", fontSize: 12, lineHeight: 1.6, pointerEvents: "none" },
   eventCard: { position: "absolute", right: 18, top: 18, zIndex: 3, maxWidth: 320, padding: 14, borderRadius: 18, background: "rgba(18,39,71,0.82)", border: "1px solid rgba(242,138,91,0.25)", boxShadow: "0 20px 80px rgba(0,0,0,0.35)" },
-    systemPopulationHud: { position: "absolute", left: 18, top: 18, zIndex: 3, minWidth: 180, padding: 12, borderRadius: 16, background: "rgba(7,19,38,0.7)", border: "1px solid rgba(169,199,223,0.12)", boxShadow: "0 16px 60px rgba(0,0,0,0.32)" },
-    systemPopulationTitle: { fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "#9eacc1", marginBottom: 4, fontFamily: "JetBrains Mono, monospace" },
+      systemPopulationHud: { position: "absolute", left: 18, top: 18, zIndex: 3, minWidth: 180, padding: 12, borderRadius: 16, background: "rgba(7,19,38,0.7)", border: "1px solid rgba(169,199,223,0.12)", boxShadow: "0 16px 60px rgba(0,0,0,0.32)", pointerEvents: "none" },
+    systemPopulationTitle: { fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "#c2d3ea", marginBottom: 4, fontFamily: "JetBrains Mono, monospace" },
     systemPopulationValue: { fontSize: 18, fontWeight: 700, color: "#f6f2e8", lineHeight: 1.1 },
     systemPopulationRate: { fontSize: 11, color: "#d4deee", marginTop: 4 },
   eventChoiceButton: { textAlign: "left", padding: 12, borderRadius: 14, border: "1px solid rgba(169,199,223,0.12)", background: "rgba(7,19,38,0.46)", color: "#f6f2e8", cursor: "pointer", flex: "1 1 135px" },

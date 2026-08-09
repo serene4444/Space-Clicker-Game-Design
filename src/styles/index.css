@@ -106,6 +106,100 @@ body {
 	}
 }
 
+@keyframes sg-intro-ambient-pulse {
+	0%,
+	100% {
+		opacity: 0.78;
+		transform: scale(1);
+	}
+
+	50% {
+		opacity: 1;
+		transform: scale(1.015);
+	}
+}
+
+@keyframes sg-intro-window-breathe {
+	0%,
+	100% {
+		opacity: 0.78;
+		transform: translate(-50%, -50%) scale(1);
+	}
+
+	50% {
+		opacity: 1;
+		transform: translate(-50%, -50%) scale(1.03);
+	}
+}
+
+@keyframes sg-intro-nebula-drift {
+	0%,
+	100% {
+		transform: translate3d(-1%, -0.6%, 0) scale(1);
+	}
+
+	50% {
+		transform: translate3d(1.2%, 0.4%, 0) scale(1.02);
+	}
+}
+
+@keyframes sg-intro-cloud-drift {
+	0% {
+		transform: translate3d(-1.8%, -0.7%, 0) scale(1.01);
+	}
+
+	50% {
+		transform: translate3d(1.4%, 0.8%, 0) scale(1.03);
+	}
+
+	100% {
+		transform: translate3d(-1.8%, -0.7%, 0) scale(1.01);
+	}
+}
+
+@keyframes sg-intro-moon-drift {
+	0%,
+	100% {
+		transform: translate3d(0, 0, 0) scale(1);
+		opacity: 0.5;
+	}
+
+	50% {
+		transform: translate3d(6px, -5px, 0) scale(1.04);
+		opacity: 0.74;
+	}
+}
+
+@keyframes sg-intro-interface-scan {
+	0% {
+		transform: translate3d(-2%, 0, 0);
+		opacity: 0.24;
+	}
+
+	50% {
+		transform: translate3d(2%, 0, 0);
+		opacity: 0.42;
+	}
+
+	100% {
+		transform: translate3d(-2%, 0, 0);
+		opacity: 0.24;
+	}
+}
+
+@keyframes sg-intro-star-twinkle {
+	0%,
+	100% {
+		opacity: 0.25;
+		transform: translate(-50%, -50%) scale(0.92);
+	}
+
+	50% {
+		opacity: 0.95;
+		transform: translate(-50%, -50%) scale(1.25);
+	}
+}
+
 .topbar {
 	position: relative;
 	z-index: 5;

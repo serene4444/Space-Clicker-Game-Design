@@ -122,6 +122,7 @@ type GameStore = GameStateData & {
   buyResearch: (researchId: string) => Result;
   buyAutomation: (automationId: string) => Result;
   buyPrestigeUpgrade: (upgradeId: string) => Result;
+  colonizePlanet: (planetId: string, targetPlanetId: string, population: number) => Result;
   setStarClass: (starClassId: string) => void;
   resolveEventChoice: (choiceId: string) => Result;
   prestige: () => Result;

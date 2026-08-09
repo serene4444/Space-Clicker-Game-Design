@@ -1,4 +1,4 @@
-export type TabId = "system" | "planets" | "upgrades" | "research" | "automation" | "achievements" | "prestige" | "stats";
+export type TabId = "system" | "planets" | "upgrades" | "research" | "automation" | "achievements" | "prestige" | "stats" | "settings";
 export type NumberFormat = "short" | "scientific";
 export type SelectedTarget = "star" | string;
 
