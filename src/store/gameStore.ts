@@ -12,6 +12,7 @@ import { STAGES } from "@/game-data/evolution-stages";
 import { getAutomationCost, getEvolveCost, getPlanetCost, getPrestigeEssenceGain, getPrestigeUpgradeCost, getResearchCost, getSpecializationCost, getUpgradeCost } from "@/utilities/costs";
 import { computeProduction } from "@/utilities/production";
 import { getPlanetPopulationCap, getPlanetPopulationGrowthRate, getPopulationMilestone, getTotalPopulation } from "@/utilities/population";
+import { getPlanetPurchaseState } from "@/utilities/planetProgression";
 import type { ActiveEvent, ColonyRoute, GameSaveEnvelope, GameStateData, GameStats, Modifier, PersistentEffect, Planet } from "@/types/game";
 
 function starterPlanet(): Planet {
@@ -166,9 +167,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   buyPlanet: (typeId) => {
     const state = get();
-    if (state.planets.length >= BALANCE.maxPlanets) return { ok: false, reason: "Planet cap reached" };
-    const cost = getPlanetCost(state.planets.length, typeId);
-    if (state.energy < cost) return { ok: false, reason: "Not enough energy" };
+    const purchaseState = getPlanetPurchaseState(state, typeId);
+    if (!purchaseState.isAvailable) return { ok: false, reason: purchaseState.reason };
     const type = getPlanetType(typeId);
     const newPlanet: Planet = {
       id: `planet-${Date.now()}`,
@@ -179,12 +179,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       angle: state.planets.length * 45,
       size: 72 + state.planets.length * 6,
       population: 0,
+      isNew: true,
     };
     set((draft) => ({
-      energy: draft.energy - cost,
+      energy: draft.energy - purchaseState.cost,
       planets: [...draft.planets, newPlanet],
+      selectedTarget: newPlanet.id,
+      activeTab: "system",
       stats: { ...draft.stats, totalPlanetsPurchased: draft.stats.totalPlanetsPurchased + 1 },
     }));
+    toast.success(`${newPlanet.name} has entered orbit.`);
     syncAchievements(get());
     return { ok: true };
   },

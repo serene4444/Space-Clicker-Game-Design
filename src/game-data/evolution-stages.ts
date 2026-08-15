@@ -49,7 +49,7 @@ export const EVOLUTION_STAGES: EvolutionStageDef[] = [
     biomassBonus: 0,
     researchBonus: 0,
     populationBonus: 0,
-    requiredUpgrade: "atmos",
+    // requiredUpgrade: "atmos",
   },
   {
     id: 3,
@@ -70,7 +70,7 @@ export const EVOLUTION_STAGES: EvolutionStageDef[] = [
     biomassBonus: 0.05,
     researchBonus: 0,
     populationBonus: 0,
-    requiredUpgrade: "organic",
+    // requiredUpgrade: "organic",
   },
   {
     id: 5,
@@ -81,7 +81,7 @@ export const EVOLUTION_STAGES: EvolutionStageDef[] = [
     biomassBonus: 0.1,
     researchBonus: 0,
     populationBonus: 0,
-    requiredUpgrade: "cellular",
+    // requiredUpgrade: "cellular",
   },
   {
     id: 6,
@@ -102,7 +102,7 @@ export const EVOLUTION_STAGES: EvolutionStageDef[] = [
     biomassBonus: 0.2,
     researchBonus: 0.05,
     populationBonus: 0.1,
-    requiredUpgrade: "agriculture",
+    // requiredUpgrade: "agriculture",
   },
   {
     id: 8,
@@ -113,7 +113,7 @@ export const EVOLUTION_STAGES: EvolutionStageDef[] = [
     biomassBonus: 0.25,
     researchBonus: 0.1,
     populationBonus: 0.2,
-    requiredUpgrade: "spaceflight",
+    // requiredUpgrade: "spaceflight",
   },
   {
     id: 9,

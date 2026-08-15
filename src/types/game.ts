@@ -28,6 +28,7 @@ export interface Planet {
   size: number;
   population: number;
   specializationId?: string;
+  isNew?: boolean;
 }
 
 export interface Modifier {
@@ -125,6 +126,10 @@ export interface PlanetTypeDef {
   color: string;
   costMultiplier: number;
   productionMultiplier: number;
+  unlockTotalEarned?: number;
+  unlockPlanetCount?: number;
+  unlockStage?: number;
+  unlockResearch?: string[];
 }
 
 export interface SpecializationDef {
