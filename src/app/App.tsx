@@ -1316,7 +1316,7 @@ function SolarSystem({
                       ...styles.planetEvolutionLabelAnchor,
                       left: 0,
                       top: `${-Math.round(planetSizePx / 2 + 18)}px`,
-                      transform: `translateX(-50%) scaleY(${1 / orbitPlaneScaleY})`,
+                      transform: "translateX(-50%)",
                     }}
                   >
                     <div style={styles.planetEvolutionLabel}>{evolutionBurst.label}</div>
@@ -1328,7 +1328,11 @@ function SolarSystem({
                     width: planetVisual.size,
                     height: planetVisual.size,
                     boxShadow: selectedPlanet?.id === planet.id ? planetVisual.selectedGlow : planetVisual.glow,
-                    transform: arriving ? "translate(-50%, -50%) scale(1.08)" : evolving ? "translate(-50%, -50%) scale(1.12)" : "translate(-50%, -50%)",
+                    transform: arriving
+                      ? `translate(-50%, -50%) scaleY(${1 / orbitPlaneScaleY}) scale(1.08)`
+                      : evolving
+                        ? `translate(-50%, -50%) scaleY(${1 / orbitPlaneScaleY}) scale(1.12)`
+                        : `translate(-50%, -50%) scaleY(${1 / orbitPlaneScaleY})`,
                     animation: arriving ? "planet-arrival 1.2s ease-out" : evolving ? "planet-evolve 1.5s ease-out" : undefined,
                     zIndex: selectedPlanet?.id === planet.id ? 7 : 5,
                   }}
