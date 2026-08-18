@@ -85,6 +85,21 @@ body {
 	}
 }
 
+@keyframes event-button-glow {
+	0% {
+		box-shadow: 0 0 0 1px rgba(255,229,182,0.16), 0 0 0 rgba(242,138,91,0), 0 0 0 rgba(255,187,96,0);
+		filter: brightness(0.96);
+	}
+	35% {
+		box-shadow: 0 0 0 1px rgba(255,229,182,0.22), 0 14px 36px rgba(242,138,91,0.22), 0 0 24px rgba(255,187,96,0.22);
+		filter: brightness(1.08);
+	}
+	100% {
+		box-shadow: 0 0 0 1px rgba(255,229,182,0.18), 0 12px 28px rgba(242,138,91,0.2), 0 0 18px rgba(255,187,96,0.24);
+		filter: brightness(1);
+	}
+}
+
 @keyframes planet-spin {
 	0% {
 		transform: rotate(-12deg);
@@ -343,12 +358,16 @@ body {
 }
 
 .brand {
-	font-family: Georgia, 'Times New Roman', serif;
-	letter-spacing: 0.08em;
+	font-family: 'Orbitron', 'Segoe UI', sans-serif;
+	font-weight: 600;
+	letter-spacing: 0.14em;
 	font-size: 15px;
-	color: var(--gold);
+	line-height: 1.2;
+	color: #f6f2e8;
 	margin-right: 6px;
 	white-space: nowrap;
+	text-transform: uppercase;
+	text-shadow: 0 0 12px rgba(242, 138, 91, 0.18);
 }
 
 .body-wrap {

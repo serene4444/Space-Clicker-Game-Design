@@ -94,8 +94,10 @@ function App() {
   const [screen, setScreen] = useState<Screen>("start");
   const [introPhase, setIntroPhase] = useState<IntroPhase>("idle");
   const [offlineSummary, setOfflineSummary] = useState<OfflineSummary | null>(null);
+  const [showEventDetails, setShowEventDetails] = useState(false);
   const layoutMode = useLayoutMode();
   const gameSettings = useGameStore((state) => state.settings);
+  const currentEventId = useGameStore((state) => state.currentEvent?.eventId);
   const saveSystem = useSaveSystem(screen === "game");
   useGameLoop(screen === "game");
   const preview = useMemo(() => readPreviewSave(), [screen]);
@@ -109,6 +111,10 @@ function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    setShowEventDetails(false);
+  }, [currentEventId]);
 
   const beginSimulation = () => {
     if (introPhase === "launch") return;
@@ -274,6 +280,7 @@ function GameScreen({
   const [showSettings, setShowSettings] = useState(false);
   const [showPlanetPicker, setShowPlanetPicker] = useState(false);
   const [showPrestigeConfirm, setShowPrestigeConfirm] = useState(false);
+  const [showEventDetails, setShowEventDetails] = useState(false);
   const [colonizeAmount, setColonizeAmount] = useState(2_000_000_000);
   const [saveText, setSaveText] = useState("");
   const isMobile = layoutMode === "mobile";
@@ -283,6 +290,10 @@ function GameScreen({
       toast.success(`Welcome back. Gained ${formatCompact(offlineSummary.energyGained)} energy while away.`);
     }
   }, [offlineSummary]);
+
+  useEffect(() => {
+    setShowEventDetails(false);
+  }, [state.currentEvent?.eventId]);
 
   const buyUpgrade = (id: string) => {
     const result = useGameStore.getState().buyUpgrade(id);
@@ -366,10 +377,18 @@ function GameScreen({
             onSelectPlanet={(id) => useGameStore.getState().selectTarget(id)}
             onOpenPlanetPicker={() => setShowPlanetPicker(true)}
           />
-          {state.currentEvent ? <EventCard eventId={state.currentEvent.eventId} onChoose={(choiceId) => {
-            const result = useGameStore.getState().resolveEventChoice(choiceId);
-            if (!result.ok) toast.error(result.reason);
-          }} /> : null}
+          {state.currentEvent || showEventDetails ? (
+            showEventDetails && state.currentEvent ? (
+              <EventCard eventId={state.currentEvent.eventId} onChoose={(choiceId) => {
+                const result = useGameStore.getState().resolveEventChoice(choiceId);
+                if (!result.ok) toast.error(result.reason);
+              }} />
+            ) : (
+              <CosmicActivityPanel state={state} onOpenDetails={() => setShowEventDetails(true)} onOpenPlanetPicker={() => setShowPlanetPicker(true)} />
+            )
+          ) : (
+            <CosmicActivityPanel state={state} onOpenDetails={() => setShowEventDetails(true)} onOpenPlanetPicker={() => setShowPlanetPicker(true)} />
+          )}
           <div style={styles.systemPopulationHud}>
             <div style={styles.systemPopulationTitle}>Total Solar System Population</div>
             <div style={styles.systemPopulationValue}>{formatNumber(totalPopulation, state.settings.numberFormat)}</div>
@@ -730,17 +749,46 @@ function getStageCapabilityDelta(current: { ocean: boolean; life: boolean; citie
 
 function EventCard({ eventId, onChoose }: { eventId: string; onChoose: (choiceId: string) => void }) {
   const event = getEvent(eventId);
+  const [hoveredChoiceId, setHoveredChoiceId] = useState<string | null>(null);
+  const [pressedChoiceId, setPressedChoiceId] = useState<string | null>(null);
+
   return (
     <div style={styles.eventCard}>
       <div style={styles.cardTitle}>{event.name}</div>
       <div style={styles.cardMeta}>{event.description}</div>
       <div style={styles.actionRow}>
-        {event.choices.map((choice) => (
-          <button key={choice.id} style={styles.eventChoiceButton} onClick={() => onChoose(choice.id)}>
-            <div style={styles.eventChoiceTitle}>{choice.label}</div>
-            <div style={styles.eventChoiceMeta}>{getEventChoiceSummary(choice)}</div>
-          </button>
-        ))}
+        {event.choices.map((choice) => {
+          const isPrimaryAction = choice.id === "add-planet" || `${choice.label}`.toLowerCase().includes("add planet");
+          const isHovered = hoveredChoiceId === choice.id;
+          const isPressed = pressedChoiceId === choice.id;
+          const buttonStyle = isPrimaryAction
+            ? {
+                ...styles.eventChoiceButtonPrimary,
+                ...(isHovered ? styles.eventChoiceButtonPrimaryHover : {}),
+                ...(isPressed ? styles.eventChoiceButtonPrimaryPressed : {}),
+              }
+            : styles.eventChoiceButton;
+          const titleStyle = isPrimaryAction ? styles.eventChoiceTitlePrimary : styles.eventChoiceTitle;
+          const metaStyle = isPrimaryAction ? styles.eventChoiceMetaPrimary : styles.eventChoiceMeta;
+
+          return (
+            <button
+              key={choice.id}
+              style={buttonStyle}
+              onMouseEnter={() => setHoveredChoiceId(choice.id)}
+              onMouseLeave={() => {
+                setHoveredChoiceId(null);
+                setPressedChoiceId(null);
+              }}
+              onMouseDown={() => setPressedChoiceId(choice.id)}
+              onMouseUp={() => setPressedChoiceId(null)}
+              onClick={() => onChoose(choice.id)}
+            >
+              <div style={titleStyle}>{choice.label}</div>
+              <div style={metaStyle}>{getEventChoiceSummary(choice)}</div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -757,6 +805,38 @@ function getEventChoiceSummary(choice: { energyDelta?: number; researchDelta?: n
   if (choice.persistentEffect) parts.push(`Permanent ${choice.persistentEffect.kind} ${choice.persistentEffect.amount > 0 ? "+" : ""}${Math.round(choice.persistentEffect.amount * 100)}%`);
   if (choice.modifier) parts.push(`Temporary ${choice.modifier.kind} ${choice.modifier.amount > 0 ? "+" : ""}${Math.round(choice.modifier.amount * 100)}%`);
   return parts.length ? parts.join(" • ") : "No immediate effect";
+}
+
+function getAchievementIcon(achievementId: string) {
+  const iconMap: Record<string, string> = {
+    "first-energy": "✦",
+    "first-planet": "◉",
+    "mature-world": "✧",
+    "first-life": "✿",
+    "civilization": "◍",
+    "max-planets": "✦",
+    "first-rebirth": "◎",
+    "one-million": "✹",
+  };
+
+  return iconMap[achievementId] ?? "✦";
+}
+
+function CosmicActivityPanel({ state, onOpenDetails, onOpenPlanetPicker }: { state: GameStateData; onOpenDetails: () => void; onOpenPlanetPicker: () => void }) {
+  const activeEvent = state.currentEvent ? getEvent(state.currentEvent.eventId) : null;
+
+  return (
+    <div style={styles.cosmicStatusHUD}>
+      <div onClick={onOpenDetails}>
+        <div style={styles.cosmicStatusLabel}>{activeEvent ? "COSMIC EVENT" : "SYSTEM STATUS"}</div>
+        <div style={styles.cosmicStatusRow}>
+          <span style={activeEvent ? styles.cosmicStatusGlyphEvent : styles.cosmicStatusGlyphNeutral}>{activeEvent ? "✦" : "●"}</span>
+          <span style={activeEvent ? styles.cosmicStatusTextEvent : styles.cosmicStatusTextNeutral}>{activeEvent ? activeEvent.name.toUpperCase() : "STABLE"}</span>
+        </div>
+      </div>
+      <button style={styles.cosmicAddPlanetButton} onClick={onOpenPlanetPicker}>✦ Add Planet</button>
+    </div>
+  );
 }
 
 function PanelContents({
@@ -889,12 +969,32 @@ function PanelContents({
 
       {activeTab === "achievements" ? (
         <>
-          {ACHIEVEMENTS.map((achievement) => (
-            <div key={achievement.id} style={state.achievements[achievement.id] ? styles.achievementUnlocked : styles.achievementCard}>
-              <div style={styles.cardTitle}>{achievement.name}</div>
-              <div style={styles.cardMeta}>{achievement.description}</div>
-            </div>
-          ))}
+          <div style={styles.achievementHeader}>ACHIEVEMENTS</div>
+          <div style={styles.achievementList}>
+            {ACHIEVEMENTS.map((achievement) => {
+              const unlocked = Boolean(state.achievements[achievement.id]);
+              const icon = getAchievementIcon(achievement.id);
+              return (
+                <div
+                  key={achievement.id}
+                  style={unlocked ? styles.achievementUnlocked : styles.achievementCard}
+                >
+                  <div style={styles.achievementRow}>
+                    <div style={unlocked ? styles.achievementIconUnlocked : styles.achievementIconLocked} aria-hidden="true">
+                      {icon}
+                    </div>
+                    <div style={styles.achievementTextWrap}>
+                      <div style={unlocked ? styles.achievementTitleUnlocked : styles.achievementTitle}>{achievement.name}</div>
+                      <div style={unlocked ? styles.achievementDescriptionUnlocked : styles.achievementDescription}>{achievement.description}</div>
+                    </div>
+                    <div style={unlocked ? styles.achievementStatusSuccess : styles.achievementStatusMuted} aria-label={unlocked ? "completed" : "locked"}>
+                      {unlocked ? "✓" : ""}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </>
       ) : null}
 
@@ -2182,8 +2282,20 @@ const styles: Record<string, CSSProperties> = {
   specializationButton: { border: "1px solid rgba(169,199,223,0.2)", background: "rgba(7,19,38,0.46)", color: "#deebff", padding: "6px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
   specializationActive: { border: "1px solid rgba(242,138,91,0.44)", background: "rgba(242,138,91,0.22)", color: "#fff6da", padding: "6px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 },
   smallButton: { border: "1px solid rgba(169,199,223,0.24)", background: "rgba(18,39,71,0.74)", color: "#f6f2e8", padding: "7px 11px", borderRadius: 12, cursor: "pointer", fontWeight: 600 },
-  achievementCard: { border: "1px solid rgba(169,199,223,0.12)", borderRadius: 16, background: "rgba(12,28,54,0.52)", padding: 14 },
-  achievementUnlocked: { border: "1px solid rgba(110,169,139,0.38)", borderRadius: 16, background: "rgba(110,169,139,0.14)", padding: 14 },
+  achievementHeader: { margin: "0 0 12px", fontSize: 12, fontWeight: 800, letterSpacing: "0.24em", textTransform: "uppercase", color: "#f28a5b", fontFamily: "JetBrains Mono, monospace", padding: "2px 2px 0" },
+  achievementList: { display: "flex", flexDirection: "column", gap: 10, maxHeight: "calc(100vh - 280px)", overflowY: "auto", paddingRight: 4 },
+  achievementCard: { border: "1px solid rgba(169,199,223,0.14)", borderRadius: 18, background: "linear-gradient(180deg, rgba(17,31,52,0.86) 0%, rgba(10,21,39,0.86) 100%)", padding: 16, opacity: 0.78, transition: "border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease" },
+  achievementUnlocked: { border: "1px solid rgba(108,181,144,0.42)", borderRadius: 18, background: "linear-gradient(180deg, rgba(19,51,43,0.78) 0%, rgba(10,27,39,0.9) 100%)", padding: 16, boxShadow: "0 18px 34px rgba(15,31,27,0.18), inset 0 0 0 1px rgba(150,229,186,0.08)", transition: "border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease" },
+  achievementRow: { display: "flex", alignItems: "center", gap: 14, minHeight: 52 },
+  achievementTextWrap: { flex: 1, minWidth: 0 },
+  achievementTitle: { marginBottom: 4, fontSize: 15, fontWeight: 700, lineHeight: 1.25, color: "#edf4ff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  achievementTitleUnlocked: { marginBottom: 4, fontSize: 15, fontWeight: 700, lineHeight: 1.25, color: "#f4fbff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  achievementDescription: { fontSize: 12, lineHeight: 1.5, color: "#9fb4cf" },
+  achievementDescriptionUnlocked: { fontSize: 12, lineHeight: 1.5, color: "#cfe0f8" },
+  achievementIconLocked: { width: 34, height: 34, minWidth: 34, borderRadius: "50%", border: "1px solid rgba(169,199,223,0.18)", background: "rgba(9,18,33,0.8)", color: "#a5b8d2", display: "grid", placeItems: "center", fontSize: 16, lineHeight: 1, opacity: 0.72 },
+  achievementIconUnlocked: { width: 34, height: 34, minWidth: 34, borderRadius: "50%", border: "1px solid rgba(156,227,180,0.42)", background: "radial-gradient(circle at 35% 30%, rgba(198,255,214,0.28) 0%, rgba(88,166,118,0.22) 34%, rgba(14,31,39,0.88) 100%)", color: "#d8ffe1", display: "grid", placeItems: "center", fontSize: 16, lineHeight: 1, boxShadow: "0 0 18px rgba(55,155,95,0.18)" },
+  achievementStatusMuted: { width: 22, height: 22, borderRadius: "50%", border: "1px solid rgba(169,199,223,0.12)", background: "rgba(11,21,39,0.66)", color: "transparent" },
+  achievementStatusSuccess: { width: 22, height: 22, borderRadius: "50%", border: "1px solid rgba(118,201,155,0.42)", background: "linear-gradient(180deg, rgba(60,124,92,0.46) 0%, rgba(18,39,29,0.8) 100%)", color: "#d9ffe9", display: "grid", placeItems: "center", fontSize: 13, fontWeight: 800, boxShadow: "0 0 16px rgba(70,164,109,0.18)" },
   statRow: { display: "flex", justifyContent: "space-between", gap: 12, borderBottom: "1px solid rgba(169,199,223,0.12)", padding: "10px 2px", color: "#dce7f8", fontSize: 12, lineHeight: 1.45 },
   optionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 },
   settingsGrid: { display: "grid", gap: 10, marginBottom: 14 },
@@ -2220,9 +2332,22 @@ const styles: Record<string, CSSProperties> = {
     systemPopulationTitle: { fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "#c2d3ea", marginBottom: 4, fontFamily: "JetBrains Mono, monospace" },
     systemPopulationValue: { fontSize: 18, fontWeight: 700, color: "#f6f2e8", lineHeight: 1.1 },
     systemPopulationRate: { fontSize: 11, color: "#d4deee", marginTop: 4 },
-  eventChoiceButton: { textAlign: "left", padding: 12, borderRadius: 14, border: "1px solid rgba(169,199,223,0.12)", background: "rgba(7,19,38,0.46)", color: "#f6f2e8", cursor: "pointer", flex: "1 1 135px" },
+  cosmicStatusHUD: { position: "absolute", right: 18, top: 18, zIndex: 4, width: 180, maxWidth: "calc(100% - 36px)", padding: "9px 12px 10px", borderRadius: 14, border: "1px solid rgba(155,177,214,0.18)", background: "rgba(8,17,31,0.38)", backdropFilter: "blur(10px)", boxShadow: "0 10px 24px rgba(0,0,0,0.18)", transition: "border-color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease" },
+  cosmicStatusLabel: { fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#98a5bb", fontFamily: "JetBrains Mono, monospace", marginBottom: 5 },
+  cosmicStatusRow: { display: "flex", alignItems: "center", gap: 8, minHeight: 18 },
+  cosmicStatusGlyphNeutral: { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 8, height: 8, borderRadius: "50%", background: "#62d89d", boxShadow: "0 0 10px rgba(98,216,157,0.38)", fontSize: 8, color: "#62d89d", lineHeight: 1 },
+  cosmicStatusGlyphEvent: { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 8, height: 8, borderRadius: "50%", background: "transparent", color: "#f3b070", fontSize: 10, lineHeight: 1, boxShadow: "0 0 10px rgba(243,176,112,0.2)" },
+  cosmicStatusTextNeutral: { fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: "#edf3ff", fontWeight: 700, fontFamily: "JetBrains Mono, monospace" },
+  cosmicStatusTextEvent: { fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "#f6f3eb", fontWeight: 700, fontFamily: "JetBrains Mono, monospace" },
+  cosmicAddPlanetButton: { marginTop: 8, width: "100%", border: "1px solid rgba(255,214,145,0.48)", background: "linear-gradient(180deg, rgba(255,194,102,0.96) 0%, rgba(242,138,91,0.9) 100%)", color: "#fffdf8", borderRadius: 999, padding: "7px 10px", fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", cursor: "pointer", boxShadow: "0 0 0 1px rgba(255,229,182,0.14), 0 8px 20px rgba(242,138,91,0.18), 0 0 16px rgba(255,187,96,0.2)", transition: "transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease", display: "block", textAlign: "center" },
+  eventChoiceButton: { textAlign: "left", padding: 12, borderRadius: 14, border: "1px solid rgba(169,199,223,0.12)", background: "rgba(7,19,38,0.46)", color: "#f6f2e8", cursor: "pointer", flex: "1 1 135px", transition: "transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, filter 0.18s ease", boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.01)" },
+  eventChoiceButtonPrimary: { textAlign: "left", padding: 12, borderRadius: 16, border: "1px solid rgba(255,214,145,0.58)", background: "linear-gradient(180deg, rgba(255,194,102,0.96) 0%, rgba(242,138,91,0.9) 100%)", color: "#fffdf8", cursor: "pointer", flex: "1 1 135px", boxShadow: "0 0 0 1px rgba(255,229,182,0.18), 0 12px 28px rgba(242,138,91,0.2), 0 0 18px rgba(255,187,96,0.24)", transform: "translateY(-1px)", transition: "transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease, opacity 0.18s ease", animation: "event-button-glow 2.8s ease-in-out 0.2s 1" },
+  eventChoiceButtonPrimaryHover: { transform: "translateY(-2px) scale(1.02)", boxShadow: "0 0 0 1px rgba(255,229,182,0.22), 0 14px 30px rgba(242,138,91,0.24), 0 0 22px rgba(255,187,96,0.28)", filter: "brightness(1.04)" },
+  eventChoiceButtonPrimaryPressed: { transform: "translateY(0) scale(0.99)", boxShadow: "0 0 0 1px rgba(255,229,182,0.18), 0 8px 20px rgba(242,138,91,0.18), 0 0 16px rgba(255,187,96,0.16)", filter: "brightness(0.96)" },
   eventChoiceTitle: { fontSize: 13, fontWeight: 700, marginBottom: 4 },
+  eventChoiceTitlePrimary: { fontSize: 13, fontWeight: 800, marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", color: "#fffaf0" },
   eventChoiceMeta: { fontSize: 10, lineHeight: 1.45, color: "#9eacc1" },
+  eventChoiceMetaPrimary: { fontSize: 10, lineHeight: 1.45, color: "rgba(255,248,234,0.86)", fontWeight: 600 },
   overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.58)", display: "grid", placeItems: "center", zIndex: 10, padding: 16 },
   overlayPanel: { width: "min(960px, calc(100vw - 24px))", maxHeight: "min(90vh, 900px)", overflow: "auto", borderRadius: 24, background: "rgba(8,16,31,0.94)", border: "1px solid rgba(169,199,223,0.12)", boxShadow: "0 40px 120px rgba(0,0,0,0.45)", padding: 18 },
   overlayHeader: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12 },
